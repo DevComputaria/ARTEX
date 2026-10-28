@@ -10,6 +10,17 @@ import (
 	"testing"
 )
 
+func TestEnabledRequiresExplicitOptIn(t *testing.T) {
+	t.Setenv("ARTEX_SELF_UPDATE", "")
+	if Enabled() {
+		t.Fatal("a atualização externa deve ficar desativada por padrão")
+	}
+	t.Setenv("ARTEX_SELF_UPDATE", "true")
+	if !Enabled() {
+		t.Fatal("ARTEX_SELF_UPDATE=true deve habilitar a atualização externa")
+	}
+}
+
 // testPaths 造一个隔离的升级目录。不能直接用 ResolvePaths()——那会指向测试
 // 二进制本身，一跑就把 go test 的可执行文件改名了。
 func testPaths(t *testing.T) Paths {

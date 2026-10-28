@@ -1563,6 +1563,8 @@ export interface FindingTrafficDetail {
 
 /** GET /api/update/check —— 当前版本与 GitHub 最新正式版的比较结果。 */
 export interface UpdateCheck {
+  /** Verdadeiro quando o perfil local bloqueia consultas e downloads externos. */
+  disabled?: boolean;
   /** 当前运行的版本；开发构建为 "dev" 或 git describe 的带后缀形式。 */
   current: string;
   /** 运行形态。docker 下换装只作用于容器可写层，重建容器会退回镜像版本。 */

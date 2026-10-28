@@ -1,6 +1,5 @@
-// Command artex runs the ARTEX backend: the dual SQLite graph stores,
-// the event-driven exploration engine, and the JSON HTTP API consumed by the
-// shadcn/ui frontend.
+// O comando artex executa o backend, os armazenamentos de grafos, o mecanismo
+// de exploração orientado a eventos e a API HTTP da interface.
 package main
 
 import (
@@ -22,8 +21,7 @@ import (
 	"github.com/Autumn-27/artex/server"
 )
 
-// version is the build version, injected at release time via
-// -ldflags "-X main.version=<tag>". Defaults to "dev" for local builds.
+// version recebe a versão da compilação por ldflags e usa "dev" localmente.
 var version = "dev"
 
 const banner = `
@@ -34,18 +32,15 @@ const banner = `
 /_/   \_\_| \_\|_| |_____/_/\_\
 `
 
-// printBanner writes the startup banner + version/runtime info to stdout.
+// printBanner exibe a versão e os dados do runtime.
 func printBanner(addr string) {
 	fmt.Print(banner)
-	fmt.Println("  AI 自主渗透测试系统")
-	fmt.Printf("  版本 %s  ·  %s/%s  ·  %s  ·  监听 %s\n\n",
+	fmt.Println("  Sistema autônomo de testes de intrusão com IA")
+	fmt.Printf("  Versão %s  ·  %s/%s  ·  %s  ·  escutando em %s\n\n",
 		version, runtime.GOOS, runtime.GOARCH, runtime.Version(), addr)
 }
 
-// main only maps run's result onto the process exit code. The exit code is part
-// of the update protocol — the supervising start script reads it to decide
-// whether to relaunch us (see selfupdate.ExitRestart) — so the body has to live
-// in a function that can *return* rather than os.Exit past its own defers.
+// main converte o resultado de run no código de saída do processo.
 func main() {
 	os.Exit(run())
 }
@@ -58,36 +53,32 @@ func run() int {
 	)
 	flag.Parse()
 
-	// hand the build version to the server package so GET /api/health can report it
-	// to the frontend top bar.
+	// Entrega a versão ao servidor para exposição em /api/health.
 	server.BuildVersion = version
 
 	printBanner(*addr)
 
-	// capture backend logs into the in-memory sink (still to stderr) so the /logs
-	// page can show a live log stream. Do this first, to catch startup logs too.
+	// Captura os logs em memória sem deixar de enviá-los ao stderr.
 	server.StartLogCapture()
 
-	// Self-update bootstrap: swap in a staged binary, or count a post-swap boot
-	// attempt and roll back if the new build keeps dying. Must run before we open
-	// the stores or bind a port — this may end with "exit and let the start script
-	// relaunch me", and there is no point paying for either first.
-	action, upState := selfupdate.Bootstrap()
-	server.SetBootUpdateState(upState)
-	if action == selfupdate.Restart {
-		return selfupdate.ExitRestart
+	// Aplica uma atualização preparada antes de abrir bancos ou portas.
+	if selfupdate.Enabled() {
+		action, upState := selfupdate.Bootstrap()
+		server.SetBootUpdateState(upState)
+		if action == selfupdate.Restart {
+			return selfupdate.ExitRestart
+		}
 	}
 
-	// surface which config file the binary reads (absolute, so `go run`'s relative
-	// "config.json" — resolved against the CWD — is unambiguous).
+	// Exibe o caminho absoluto do arquivo de configuração.
 	cfgPath := config.Path()
 	if abs, e := filepath.Abs(cfgPath); e == nil {
 		cfgPath = abs
 	}
 	if _, e := os.Stat(cfgPath); e == nil {
-		log.Printf("[config] 配置文件: %s", cfgPath)
+		log.Printf("[config] Perfil: %s", cfgPath)
 	} else {
-		log.Printf("[config] 配置文件: %s (不存在 — 将仅尝试环境变量 ARTEX_PG_DSN)", cfgPath)
+		log.Printf("[config] arquivo: %s (inexistente; será tentada apenas ARTEX_PG_DSN)", cfgPath)
 	}
 
 	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -101,9 +92,7 @@ func run() int {
 	}
 	defer mgr.Close()
 
-	// Surviving this long means a freshly swapped-in build actually works, so drop
-	// the upgrade marker and stop counting attempts. Until it fires, every boot
-	// increments the count and a build that keeps dying gets rolled back.
+	// Uma execução estável remove o marcador de tentativa de atualização.
 	settle := time.AfterFunc(selfupdate.SettleDelay, selfupdate.Settle)
 	defer settle.Stop()
 
@@ -111,7 +100,7 @@ func run() int {
 	if abs, err := filepath.Abs(skillDir); err == nil {
 		skillDir = abs
 	}
-	log.Printf("[config] skill 目录: %s", skillDir)
+	log.Printf("[config] diretório de skills: %s", skillDir)
 	srv := server.New(ctx, mgr, skillDir, *dataDir, config.BaseDir())
 	httpSrv := &http.Server{
 		Addr:              *addr,
@@ -126,9 +115,7 @@ func run() int {
 		}
 	}()
 
-	// Two ways out: a signal (normal stop → exit 0, the start script stops looping)
-	// or a staged update / rollback (→ exit 75, the script relaunches us and the
-	// bootstrap above installs the new build).
+	// Um sinal encerra normalmente; atualização ou rollback solicita reinício (75).
 	code := 0
 	select {
 	case <-ctx.Done():
@@ -144,9 +131,7 @@ func run() int {
 	return code
 }
 
-// shutdownContext deliberately does not derive from signalCtx. If it did, the
-// parent's plain context.Canceled could win the race before AbortShutdown was
-// attached to the child, losing the diagnostic cause in every running Agent.
+// shutdownContext preserva a causa de encerramento usada pelos agentes.
 func shutdownContext(signalCtx context.Context) (context.Context, context.CancelCauseFunc) {
 	ctx, shutdown := context.WithCancelCause(context.Background())
 	go func() {
