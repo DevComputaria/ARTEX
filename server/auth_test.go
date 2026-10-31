@@ -7,19 +7,21 @@ import (
 	"testing"
 )
 
-// GetSetting 对"键不存在"和"读取出错"的返回值只差一个 error：两种情况 value 都是
-// 空串。密码相关的 handler 一旦把 error 当成"还没设置密码"，就会在数据库抖动期间
-// 敞开初始化入口——authInit 会放行一个未认证请求去覆盖已有的管理员密码，
-// authStatus 则会把前端直接送到 /setup 去照着做这件事。
+// GetSetting returns "key does not exist" and "read error" with one error difference: in both cases
+// the value is an empty string. Password-related handlers Once error is treated as "no password
+// set", an initialization entry is opened during the database shake—authInit releases an
+// unauthenticated request to override the existing administrator password, and authStatus sends the
+// front-end directly to /setup to do the same.
 //
-// 这两个测试把 handler 的连接池关掉来制造读取失败，断言两处都 fail closed。
+// Both tests produce a read failure by closing the handler's connection pool, and both declare a
+// fail closed.
 func TestAuthStatusFailsClosedWhenDataSourceUnavailable(t *testing.T) {
 	m, err := NewManager(t.TempDir(), "")
 	if err != nil {
 		t.Skipf("postgres unavailable (%v)", err)
 	}
 	defer m.Close()
-	// 关掉池子，让后续 GetSetting 返回 error 而不是 sql.ErrNoRows。
+	// Shut down the pool and let the subsequent GetSetting return error instead of sql.ErrNoRows.
 	if err := m.pg.Close(); err != nil {
 		t.Fatal(err)
 	}

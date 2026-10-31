@@ -10,25 +10,28 @@ import (
 	"time"
 )
 
-// Repo 是发布源。写死而不是做成配置项：更新源可配等于给任何能改配置的人一条
-// 远程代码执行通道，对一个渗透测试平台来说这个口子开不得。
+// Repo is the release source. It's written dead, not made into a configuration item: the ability to
+// assign an update source is equivalent to giving anyone who can change the configuration a remote
+// code execution channel, which is a hole in a penetration testing platform.
 const Repo = "Autumn-27/artex"
 
-// latestURL 是 GitHub 的"最新正式版"接口。它会自动跳过 prerelease 和 draft。
+// latestURL is the "latest official release" interface for GitHub. It automatically skips
+// prerelease and draft.
 const latestURL = "https://api.github.com/repos/" + Repo + "/releases/latest"
 
-// allowedHosts 限定升级链路能访问的域名。配合下面的 checkRedirect，
-// 任何一跳被重定向到名单外的主机都会直接失败——这是防止 DNS 污染 / 中间人
-// 把二进制换掉的第一道闸门，第二道是 SHA256SUMS 比对。
+// allowedHosts restricts the domains that the upgrade link can access. Together with checkRedirect
+// below, any jump redirected to a host outside of the list will fail straight away — this is the
+// first gateway to prevent DNS pollution / middlemen from swapping the binary, and the second is
+// the SHA256SUMS matching.
 var allowedHosts = map[string]bool{
 	"api.github.com":                       true,
 	"github.com":                           true,
-	"objects.githubusercontent.com":        true, // release 资产实际落地的对象存储
+	"objects.githubusercontent.com":        true, // release Object storage for the actual release of assets
 	"release-assets.githubusercontent.com": true,
 	"raw.githubusercontent.com":            true,
 }
 
-// Release 是 GitHub Release 里我们关心的字段。
+// Release is the field we care about in GitHub Release.
 type Release struct {
 	TagName     string    `json:"tag_name"`
 	Name        string    `json:"name"`
@@ -40,17 +43,17 @@ type Release struct {
 	Assets      []Asset   `json:"assets"`
 }
 
-// Asset 是 Release 上挂的一个文件。
+// An asset is a file that is attached to a Release.
 type Asset struct {
 	Name string `json:"name"`
 	URL  string `json:"browser_download_url"`
 	Size int64  `json:"size"`
 }
 
-// NewClient 构造一个只认 GitHub 域名的 HTTP 客户端。proxy 为空则直连。
+// NewClient builds an HTTP client that recognizes only the GitHub domain name.
 //
-// 刻意不复用默认 Transport：升级链路必须强制走 TLS 且校验证书，不能被别处
-// 设置的 InsecureSkipVerify 之类影响到。
+// Intentionally discard the default Transport: Upgrade links must force TLS and validate
+// certificates, and cannot be affected by the InsecureSkipVerify class set elsewhere.
 func NewClient(proxy string) *http.Client {
 	tr := &http.Transport{
 		ForceAttemptHTTP2:   true,
@@ -63,7 +66,7 @@ func NewClient(proxy string) *http.Client {
 	}
 	return &http.Client{
 		Transport: tr,
-		Timeout:   30 * time.Minute, // 下载整包，不能按请求级超时卡死
+		Timeout:   30 * time.Minute, // Downloading the entire package, not dead by request-level timeout
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= 10 {
 				return fmt.Errorf("重定向次数过多")
@@ -73,7 +76,7 @@ func NewClient(proxy string) *http.Client {
 	}
 }
 
-// checkURL 强制 https + 域名白名单。
+// checkURL enforces https + domain name whitelisting.
 func checkURL(u *url.URL) error {
 	if u.Scheme != "https" {
 		return fmt.Errorf("拒绝非 HTTPS 地址: %s", u.Scheme+"://"+u.Host)
@@ -84,7 +87,7 @@ func checkURL(u *url.URL) error {
 	return nil
 }
 
-// FetchLatest 查询最新正式版。
+// FetchLatest Gets the latest official release.
 func FetchLatest(ctx context.Context, c *http.Client) (*Release, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, latestURL, nil)
 	if err != nil {
@@ -104,7 +107,8 @@ func FetchLatest(ctx context.Context, c *http.Client) (*Release, error) {
 
 	switch {
 	case resp.StatusCode == http.StatusForbidden, resp.StatusCode == http.StatusTooManyRequests:
-		// 未认证的 GitHub API 是每 IP 每小时 60 次，共用出口 IP 时很容易撞上。
+		// The unauthenticated GitHub API is 60 times per IP per hour, which is easy to crash when
+		// sharing export IPs.
 		return nil, fmt.Errorf("GitHub 接口限流（每小时 60 次），请稍后再试")
 	case resp.StatusCode == http.StatusNotFound:
 		return nil, fmt.Errorf("仓库 %s 尚未发布任何正式版本", Repo)
@@ -122,13 +126,14 @@ func FetchLatest(ctx context.Context, c *http.Client) (*Release, error) {
 	return &rel, nil
 }
 
-// AssetName 返回当前平台对应的发布包名，与 build.sh 的 package_binary 保持一致：
-// artex-<版本>-<os>-<arch>.zip（版本号不带 v 前缀）。
+// AssetName returns the release package name for the current platform, consistent with
+// package_binary in build.sh: artex-<version>-<os>-<arch>.zip (the version number does not have a v
+// prefix).
 func AssetName(tag, goos, goarch string) string {
 	return fmt.Sprintf("artex-%s-%s-%s.zip", strings.TrimPrefix(tag, "v"), goos, goarch)
 }
 
-// FindAsset 在 Release 里按名字找资产。
+// FindAsset Searches for assets by name in Release.
 func (r *Release) FindAsset(name string) (Asset, bool) {
 	for _, a := range r.Assets {
 		if strings.EqualFold(a.Name, name) {

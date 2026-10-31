@@ -9,8 +9,9 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import type { AssetInterceptKind, AssetInterceptRuleInput } from "@/lib/types";
 
-// 用 NativeSelect（原生 <select>）而非 shadcn Select：这个编辑器会用在 Sheet 抽屉内，
-// shadcn Select 的下拉 portal 到 body、点击外部会触发抽屉的「点击外部关闭」误关；原生下拉无此问题。
+// Using NativeSelect (native <select>) instead of shadcn Select: This editor is used in the Sheet
+// drawer, and shadcn Select's pull-down portal to body, clicking outside, triggers the drawer's
+// "click-close-outside" error; native dropdown does not.
 export const ASSET_INTERCEPT_KIND_OPTIONS: {
   value: AssetInterceptKind;
   label: string;
@@ -25,8 +26,9 @@ export const ASSET_INTERCEPT_KIND_OPTIONS: {
   { value: "cidr", label: "CIDR 网段", placeholder: "192.168.0.0/16" },
 ];
 
-// AssetInterceptRulesEditor 是「拦截/允许规则」的受控多行编辑区（拦截block/允许allow +
-// 类型 + 匹配内容 + 备注），不自带持久化——由父组件决定何时提交。
+// The AssetInterceptRulesEditor is a controlled multi-line editing area for block/allow rules
+// (block/allow + type + match content + note) that does not have persistency—the parent component
+// decides when to submit.
 export function AssetInterceptRulesEditor({
   value,
   onChange,
@@ -48,7 +50,8 @@ export function AssetInterceptRulesEditor({
       {value.map((r, i) => {
         const ph = ASSET_INTERCEPT_KIND_OPTIONS.find((o) => o.value === r.kind)?.placeholder ?? "";
         return (
-          // biome-ignore lint/suspicious/noArrayIndexKey: 行无稳定 id，按索引受控即可
+          // biome-ignore lint/suspicious/noArrayIndexKey: No stable id for the array, control by
+          // index
           <div key={i} className="flex items-center gap-2">
             <NativeSelect
               size="sm"

@@ -6,9 +6,10 @@ import (
 	"time"
 )
 
-// InsertSettingIfAbsent 是 auth.password_hash 的兜底：调用方的 GetSetting 检查可能
-// 因为数据库报错而失效，也可能被并发请求插队（bcrypt 要跑几十毫秒），所以"仅首次
-// 可设"的保证必须落在主键约束上，而不是上层的 if 判断。
+// InsertSettingIfAbsent is the backbone of auth.password_hash: the caller's GetSetting check may
+// fail due to database errors, or it may be queued by concurrent requests (bcrypt takes tens of
+// milliseconds to run), so the "only first set" guarantee must fall on the primary key constraint
+// rather than the upper-level if judgment.
 func TestInsertSettingIfAbsentDoesNotOverwrite(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {
@@ -16,7 +17,7 @@ func TestInsertSettingIfAbsentDoesNotOverwrite(t *testing.T) {
 	}
 	defer d.Close()
 
-	// 用测试专属 key，绝不碰开发库里真实的 auth.password_hash。
+	// The auth.password_hash is the key that is used to create the password.
 	key := fmt.Sprintf("test.insert_if_absent.%d", time.Now().UnixNano())
 	defer func() { _, _ = d.Exec(`DELETE FROM settings WHERE key=$1`, key) }()
 

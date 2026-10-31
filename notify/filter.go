@@ -7,40 +7,44 @@ import (
 	"strings"
 )
 
-// Filter 是 notification_channels.filter 这一 JSONB 列的契约：渠道实例的过滤条件。
-// 所有字段都可选，缺省即「不过滤」——这正是畸形配置的兜底语义，见 ParseFilter。
+// Filter is the contract of the JSONB column notification_channels.filter: the filtering condition
+// for the channel instance. All fields are optional, default is "no filter" — this is the bottom
+// line of the distorted configuration, see ParseFilter.
 type Filter struct {
-	// MinSeverity 是最低级别门槛（low/medium/high/critical），空=不设门槛。
+	// MinSeverity is the lowest level threshold (low/medium/high/critical), empty = no threshold.
 	MinSeverity string `json:"min_severity"`
-	// TaskIDs / AssetIDs 为空数组表示不限；非空则要求事件与它有交集。
+	// TaskIDs / AssetIDs are empty arrays representing unlimited; non-empty requires that the event
+	// intersects with it.
 	TaskIDs  []int64 `json:"task_ids"`
 	AssetIDs []int64 `json:"asset_ids"`
-	// VulnClassInclude 为空表示全收；非空则要求 vulnclass 命中其中任一关键词。
-	// VulnClassExclude 命中任一关键词即排除（排除优先于包含）。
-	// 匹配方式为大小写不敏感的子串——比正则安全：用户配错正则不会让渠道静默失效。
+	// VulnClassInclude is empty for all inclusions; non-empty requires vulnclass to match any of
+	// the keywords. VulnClassExclude matches any of the keywords for exclusions (exclusion takes
+	// precedence over inclusion).
 	VulnClassInclude []string `json:"vulnclass_include"`
 	VulnClassExclude []string `json:"vulnclass_exclude"`
-	// OnStatusChange 决定该渠道是否接收漏洞状态变更事件（仅 realtime 模式有意义）。
+	// OnStatusChange determines whether the channel receives a vulnerability state change event
+	// (meaningful only in realtime mode).
 	OnStatusChange bool `json:"on_status_change"`
 }
 
-// ParseFilter 解析渠道过滤配置。
+// ParseFilter Parses the channel filter configuration.
 //
-// **永不返回 error。** 这是刻意的设计选择：过滤条件配置畸形时一律退化为零值
-// Filter（= 不过滤 = 全部命中），因为对一个漏洞通知系统来说，**多推一条远好过
-// 静默漏掉一条高危**。让解析失败变成「不推送」，等于给用户一个看起来配好了、
-// 实际什么都不推的渠道——这是最糟的失败模式。
+// **Never return error.** This is a deliberate design choice: Filter always degrades to zero when
+// filter conditions are configured incorrectly (= no filtering = all hits), because for a
+// vulnerability notification system, it is better to push one more than to silently miss a
+// high-risk one.
 func ParseFilter(raw []byte) Filter {
 	var f Filter
 	if len(raw) == 0 {
 		return f
 	}
-	// 解析失败时 f 保持零值，即不过滤。
+	// If the parsing fails, f is kept to zero, i.e. no filtering.
 	_ = json.Unmarshal(raw, &f)
 	return f
 }
 
-// ValidMinSeverity 报告 s 是否为合法的级别门槛（空串表示不设门槛）。
+// ValidMinSeverity reports whether s is a valid threshold level (empty string indicates no
+// threshold).
 func ValidMinSeverity(s string) bool {
 	if s == "" {
 		return true
@@ -49,16 +53,19 @@ func ValidMinSeverity(s string) bool {
 	return ok
 }
 
-// Validate 校验过滤配置里**取值受限**的字段，供保存渠道时调用。
+// Validate Validates the fields in the filter configuration that are **value-restricted** for use
+// when saving a channel.
 //
-// 为什么必须在写入时拦：Match 对未知门槛的判定是 `rank >= 0`，恒为真——
-// 也就是说 min_severity 打错一个字（"hgih"），过滤器会**静默失效**变成
-// 「全推」。这与本包「宁可多推不可漏推」的取舍方向一致（不会漏），
-// 但后果是用户以为自己在做分级推送、实际把全部漏洞灌进群里，
-// 而且没有任何迹象提示他配错了。这类「静默降级」正应该在入口处拦掉。
+// Why write-only blocking is necessary: Match determines that the unknown threshold is `rank >= 0`,
+// so it is always true - i.e., if min_severity is mistyped by one word ('hgih'), the filter will
+// **silent fail** and become "all push". This is consistent with the package's trade-off of "better
+// push than miss push" (it does not miss), but the consequence is that the user thinks he is doing
+// a rank push and actually inserts all vulnerabilities into the group, and there is no indication
+// that he has been mismatched.
 //
-// 注意 Validate 只用于**写入**路径。读取路径仍走 ParseFilter 的宽容语义，
-// 这样历史数据里已经存在的坏值不会让渠道整个读不出来。
+// Note that Validate is only used for **writing** paths. The read path still follows ParseFilter's
+// tolerant semantics, so that bad values already present in the historical data do not make the
+// entire channel unreadable.
 func (f Filter) Validate() error {
 	if !ValidMinSeverity(f.MinSeverity) {
 		return fmt.Errorf("最低级别 %q 无效，可选：low / medium / high / critical，或留空表示不限", f.MinSeverity)
@@ -66,13 +73,14 @@ func (f Filter) Validate() error {
 	return nil
 }
 
-// Match 判定一个事件是否应投递到带有该过滤条件的渠道。
+// Match determines whether an event should be delivered to a channel with the filtering condition.
 //
-// **永不返回 error**，理由同 ParseFilter：任何内部异常都按「命中」处理。
-// 判定顺序：事件类型 → 级别门槛 → 任务/资产范围 → 漏洞类型关键词。
+// **Never return error**, reasons identical to ParseFilter: any internal exception is treated as a
+// hit.
 func Match(f Filter, s Snapshot) bool {
-	// 状态变更事件只有显式开启的渠道才接收。默认关，因为绝大多数使用者
-	// 期望「推送」指的是「发现新漏洞」，而不是流水账式地跟进每个状态流转。
+	// Only explicitly enabled channels receive state change events. The default is off, because
+	// most users expect "push" to mean "discover new vulnerabilities", rather than a flow-through
+	// follow-up of each state flow.
 	if s.Kind == EventFindingStatusChanged && !f.OnStatusChange {
 		return false
 	}
@@ -85,7 +93,8 @@ func Match(f Filter, s Snapshot) bool {
 	if len(f.AssetIDs) > 0 && !intersectsInt(f.AssetIDs, s.AssetIDs) {
 		return false
 	}
-	// 排除优先：命中任一排除关键词即出局，即便同时命中了包含列表。
+	// Exclusion priority: Hit any excluding keyword and you are out of the game, even if you also
+	// hit the list of included keywords.
 	if len(f.VulnClassExclude) > 0 && containsAnyFold(s.VulnClass, f.VulnClassExclude) {
 		return false
 	}
@@ -96,8 +105,8 @@ func Match(f Filter, s Snapshot) bool {
 }
 
 func intersectsInt(a, b []int64) bool {
-	// 小集合线性扫描即可；两边的量级都是「人手勾选的几十个」，
-	// 建 map 的开销大于收益。
+	// A linear scan of a small set is sufficient; the scales on both sides are "dozens of
+	// hand-picked ones", and the cost of building a map is greater than the benefits.
 	for _, v := range b {
 		if slices.Contains(a, v) {
 			return true
@@ -106,7 +115,7 @@ func intersectsInt(a, b []int64) bool {
 	return false
 }
 
-// containsAnyFold 报告 s 是否包含 keywords 中任一关键词（大小写不敏感）。
+// containsAnyFold Reports whether s contains any keyword in keywords (case-insensitive).
 func containsAnyFold(s string, keywords []string) bool {
 	lower := strings.ToLower(s)
 	for _, kw := range keywords {

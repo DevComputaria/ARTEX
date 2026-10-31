@@ -10,13 +10,13 @@ import type { Edge, TaskNode } from "@/lib/types";
 export function GraphTab({ taskId }: { taskId: string }) {
   const [nodes, setNodes] = React.useState<TaskNode[]>([]);
   const [edges, setEdges] = React.useState<Edge[]>([]);
-  // 上一次图数据的签名:轮询拿到相同数据时跳过 setState,避免整图无谓重建(拖动时
-  // 才不会被 20s 轮询打断而顿挫)。只取影响渲染的字段。
+  // Signature of last graph data: skip setState when rolling queries get the same data, to avoid
+  // rebuilding the whole graph without need (dragging is interrupted by a 20s rolling query).
   const sigRef = React.useRef("");
 
   React.useEffect(() => {
     let cancelled = false;
-    sigRef.current = ""; // 换任务:强制下一次刷新
+    sigRef.current = ""; // Change task: Force next refresh
     const load = () => {
       api
         .explorationGraph(taskId)
@@ -28,7 +28,7 @@ export function GraphTab({ taskId }: { taskId: string }) {
             ns.map((n) => [n.id, n.type, n.state, n.priority, n.payload]),
             es.map((e) => [e.src, e.dst, e.rel]),
           ]);
-          if (sig === sigRef.current) return; // 无变化 → 不重建
+          if (sig === sigRef.current) return; // No changes → No rebuilding
           sigRef.current = sig;
           setNodes(ns);
           setEdges(es);

@@ -1,6 +1,5 @@
 // Package agent wires real LLM-driven planner and work agents (on top of the
-// agent-core SDK) to the dual SQLite graph. See docs/ARTEX-架构设计.md
-// §4.3 (planner) and §4.4 (work agent).
+// See the architecture design document, §4.3 (planner) and §4.4 (work agent).
 //
 // Provider configuration is read from the environment so the system runs with
 // any Anthropic- or OpenAI-format endpoint. If no key is configured, FromEnv
@@ -45,56 +44,67 @@ type Config struct {
 	// ContextWindowK is the model's context window in K tokens (user-configured),
 	// used to size compaction thresholds. 0 = default; see CompactionWindow.
 	ContextWindowK int
-	// ThinkingType 独立控制思考「开关」字段(thinking.type):
-	//   "" = 不发送(默认,兼容不支持该字段的模型); "disabled" = 显式关闭;
-	//   "enabled" = 开启. 与 ReasoningEffort 完全解耦——有些接口没有 thinking 字段、
-	//   只靠强度参数就能激活思考,故两者可各自单独设置.
+	// ThinkingType controls the thinking switch field (thinking.type) independently: "" = not sent
+	// (default, compatible with models that do not support this field); "disabled" = explicitly
+	// disabled; "enabled" = enabled. Completely decoupled from ReasoningEffort — some interfaces do
+	// not have a thinking field and can activate thinking only with the intensity parameter, so
+	// both can be set separately.
 	ThinkingType string
-	// ReasoningEffort 独立控制思考「强度」字段:
-	//   "" = 不发送(默认); "low"/"medium"/"high"/"xhigh"/"max" = 对应强度.
-	//   OpenAI 映射为顶层 reasoning_effort;Anthropic 映射为 output_config.effort.
+	// ReasoningEffort Independently controls the "intensity" field: "" = not sent (default);
+	// "low"/"medium"/"high"/"xhigh"/"max" = corresponding intensity. OpenAI maps to top-level
+	// reasoning_effort; Anthropic maps to output_config.effort.
 	ReasoningEffort string
-	// Stream 控制该 profile 是否使用流式(SSE)接口。true(默认)= 流式;false = 真·
-	// 非流式(发 stream:false,一次性拿完整 JSON,走 Provider.Complete)。非流式可绕开
-	// 某些网关糟糕的 SSE 实现(空帧、思考字段丢帧),代价是失去运行中的实时进度/实时
-	// token 计数。映射为 agentcore.Options.NonStreaming = !Stream。
+	// Stream Controls whether the profile uses the stream (SSE) interface.true
+	// (default)=stream;false = true;non-stream (send stream:false, get the full JSON once, go
+	// Provider.Complete).Non-streaming can bypass some poor gateway SSE implementations (empty
+	// frames, thinking field frame loss) at the cost of losing real-time progress/real-time token
+	// counts in the run.Mapped to agentcore.Options.NonStreaming =!Stream.
 	Stream bool
-	// MaxTokens 是单次回复的输出上限(token)。0 = 不发送该字段,由服务端默认值决定
-	// (历史行为)。与 ContextWindowK 不同:后者是模型总容量,只在本地用来算压缩阈值,
-	// 不出现在请求里;本值随每次请求发出。映射为 agentcore.Options.MaxTokens。
+	// MaxTokens is the maximum output (token) for a single response.0 = Do not send this field,
+	// determined by the service-side default value (historical behavior).Unlike ContextWindowK: the
+	// latter is the total capacity of the model, used only locally to calculate the compression
+	// threshold, and does not appear in requests; this value is sent with each request.Mapped to
+	// agentcore.Options.MaxTokens.
 	MaxTokens int
-	// MaxTokensField 选择 MaxTokens 用哪个请求字段名,仅对 format=openai 生效:
-	//   "" = max_tokens(默认); "max_completion_tokens" = 新字段。
-	// OpenAI 推理模型(o 系列/GPT-5)只认后者,收到 max_tokens 会直接报
-	// unsupported_parameter;而多数兼容网关只认前者,故不做自动推断,交由用户按端点选。
+	// MaxTokensField Selects which MaxTokens to use for the requested field name, only effective
+	// for format=openai: "" = max_tokens (default); "max_completion_tokens" = new field. OpenAI's
+	// reasoning model (o series/GPT-5) recognizes only the latter, and when receiving max_tokens it
+	// reports unsupported_parameter directly; most compatible gateways recognize only the former,
+	// so they do not automatically infer it, leaving it to the user to select by clicking on the
+	// end.
 	MaxTokensField string
-	// SessionHeaderKey,非空时,让每次 LLM 请求带上一个自定义 HTTP 头,头名为该值、
-	// 头值为【当前会话的 session id】(chat 会话=conv-<id>,worker=exp<x>-worker-i<intent>
-	// 等,见 WorkerSessionID)。用于某些按 session-id 头做提示缓存/粘性路由的网关。
-	// 空 = 不发送。值由 transcript.WithSessionID 挂在请求 context 上,由 RoundTripper
-	// 读取填入,因此同一共享 provider 也能按会话发出不同的头值。
+	// SessionHeaderKey, when not empty, makes each LLM request have a custom HTTP header with the
+	// header name of the value and the header value as follows: [session id of the current session]
+	// (chat session=conv-<id>, worker=exp<x>-worker-i<intent>, etc., see WorkerSessionID). Used for
+	// some gateways that prompt cache/viscous routing by session-id header. Empty = Not sent. The
+	// value is hung on the request context by transcript.WithSessionID and is populated by
+	// RoundTripper, so that the same shared provider can send different headers per session.
 	SessionHeaderKey string
-	// Retry 是该配置解析后的重试参数(profile 覆盖 → 全局策略 → 内置默认,由
-	// server 侧解析)。三层的含义见 RetryConfig;零值 = 完全沿用内置默认。
+	// Retry is the retry parameter after this configuration is parsed (profile override → Global
+	// policy → Built-in default, parsed by the server side). For the meaning of the three layers,
+	// see RetryConfig; zero = follows the built-in default completely.
 	Retry RetryConfig
 }
 
-// RetryConfig 是随一个 LLM 配置走的重试参数。每层的「次数」统一语义:
-// 0 = 用内置默认次数;负数 = 关闭该层重试;>0 = 用该值。每层的「间隔」:
-// 0 = 用该层原本的指数退避;>0 = 改用这个固定间隔。
+// RetryConfig is a retry parameter that goes with an LLM configuration. The "number" of times for
+// each layer is unified semantically: 0 = use the built-in default number of times; negative =
+// retry off the layer; >0 = use this value.The "interval" for each layer is: 0 = avoid with the
+// exponent of the original interval for the layer; >0 = use this fixed interval instead.
 type RetryConfig struct {
-	// ConnectAttempts/ConnectInterval:SDK 建连重试(连接重置/超时/429/5xx,流开始前),
-	// 直接映射为 llm.Config.MaxRetries / RetryInterval。默认 3 次、0.5s 起指数(封顶 8s)。
+	// ConnectAttempts/ConnectInterval: SDK builds a retry interval (connection
+	// reset/timeout/429/5xx, before stream starts), directly mapped to llm.Config.MaxRetries /
+	// RetryInterval. Default 3 times, index starting at 0.5s (peak 8s).
 	ConnectAttempts int
 	ConnectInterval time.Duration
-	// EmptyAttempts/EmptyInterval:SDK 空响应重试(完成但无 content block,仅 openai
-	// 格式),映射为 llm.Config.EmptyResponseRetries / EmptyResponseInterval。
-	// 默认 2 次、同一条指数梯度。
+	// EmptyAttempts/EmptyInterval: SDK empty response retries (completed but without content block,
+	// openai format only), mapped to llm.Config.EmptyResponseRetries / EmptyResponseInterval. By
+	// default 2 times, same exponential gradient.
 	EmptyAttempts int
 	EmptyInterval time.Duration
-	// StreamAttempts/StreamInterval:同 provider 安全窗口重试——本项目在 SDK 之上补的
-	// 一层,只在「还没向调用方交付任何输出」时重放断流/过载/流内 429。SDK 看不到它,
-	// 由 server/task_llm.go 消费。默认 2 次、0.5s 起指数(封顶 4s)。
+	// StreamAttempts/StreamInterval: Retry with the provider's security window - this is a layer
+	// that this project adds to the SDK, only replays the stream when "no output has been delivered
+	// to the caller". It is not seen by the SDK, consumed by server/task_llm.go. Default 2 times,
+	// 0.5s starting index (top 4s).
 	StreamAttempts int
 	StreamInterval time.Duration
 }
@@ -162,7 +172,7 @@ func FromEnv() (Config, bool) {
 		BaseURL: os.Getenv("ARTEX_LLM_BASE_URL"),
 		Model:   os.Getenv("ARTEX_LLM_MODEL"),
 		Proxy:   strings.TrimSpace(os.Getenv("ARTEX_LLM_PROXY")),
-		// 默认流式;ARTEX_LLM_STREAM=false/0/off 显式关闭走非流式。
+		// Default stream; ARTEX_LLM_STREAM=false/0/off Explicit disable of non-streaming.
 		Stream: !isFalsy(os.Getenv("ARTEX_LLM_STREAM")),
 	}
 	switch prov {
@@ -201,7 +211,7 @@ func ConfigFrom(provider, model, baseURL, apiKey, proxy string) Config {
 		BaseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"),
 		APIKey:  strings.TrimSpace(apiKey),
 		Proxy:   strings.TrimSpace(proxy),
-		Stream:  true, // 默认流式;调用方按 profile 覆盖
+		Stream:  true, // default flow; the caller overrides the profile
 	}
 	switch strings.TrimSpace(provider) {
 	case "openai":
@@ -265,14 +275,15 @@ func (c Config) NewProvider() (llm.Provider, error) {
 		Model:      c.Model,
 		HTTPClient: client,
 	}
-	// 思考开关与强度两个字段各自透传(空 = 该字段不发送)。二者解耦:
-	// 可只发 thinking.type、只发 effort、都发、或都不发。
+	// The thinking switch and the intensity field are passed separately (empty = the field is not
+	// sent).They can be decoupled: only thinking.type, only effort, both, or none.
 	lc.ThinkingType = c.ThinkingType
 	lc.ReasoningEffort = c.ReasoningEffort
-	// 输出上限的字段名选择(空 = 用 max_tokens)。上限的「值」不在这里:它每轮随
-	// agentcore.Options.MaxTokens 走,provider 只决定把它塞进哪个键。
+	// The "value" of the upper limit is not here: it goes with agentcore.Options.MaxTokens every
+	// turn, and provider only decides which key to put it in.
 	lc.MaxTokensField = c.MaxTokensField
-	// 重试参数与 SDK 同语义(次数 0=默认/负=关闭,间隔 0=指数退避/>0=固定),原样透传。
+	// Retry parameters are the same as SDK (number 0=default/negative=off, interval 0=exponential
+	// avoidance/>0=fixed) and are passed as they are.
 	lc.MaxRetries = c.Retry.ConnectAttempts
 	lc.RetryInterval = c.Retry.ConnectInterval
 	lc.EmptyResponseRetries = c.Retry.EmptyAttempts
@@ -401,7 +412,7 @@ func quotaAwareHTTPClient(proxy, sessionHeaderKey string) (*http.Client, error) 
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	proxy = strings.TrimSpace(proxy)
 	if proxy == "" {
-		transport.Proxy = nil // 留空=直连,不回退 HTTP_PROXY/HTTPS_PROXY 环境变量
+		transport.Proxy = nil // HTTP_PROXY/HTTPS_PROXY environment variables are not returned.
 	} else {
 		proxyURL, err := url.Parse(proxy)
 		if err != nil {
@@ -420,10 +431,9 @@ func quotaAwareHTTPClient(proxy, sessionHeaderKey string) (*http.Client, error) 
 }
 
 // logTestConnection prints the raw HTTP status code(s) and response body of a
-// connection test to the server log, so "点击测试" leaves a diagnosable trail of
-// exactly what the gateway returned — 401 bodies, quota text, empty frames — not
-// just the collapsed ok/err the UI shows. Bodies are clipped to keep a chatty
-// SSE stream from flooding the log.
+// The connection test to the server log, so "click test" leaves a diagnosable trail of exactly what
+// the gateway returned — 401 bodies, quota text, empty frames — not just the collapsed ok/err the
+// UI shows. Bodies are clipped to keep a chatty SSE stream from flooding the log.
 func logTestConnection(c Config, capt *llmrec.Capture) {
 	attempts := capt.Attempts()
 	if len(attempts) == 0 {
@@ -461,38 +471,43 @@ func TestConnection(ctx context.Context, c Config) (time.Duration, string, error
 	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	// 抓取原始 wire 报文:连接测试最需要看到的就是网关到底回了什么(状态码+响应体),
-	// 而 norma 把响应解码成 StreamEvent 后这些就没了。quotaAwareTransport 会在
-	// context 里找到这个 Capture 并填入每次 HTTP 尝试的状态码与 body。
+	// Grab the original wire message: The most important thing to see in a connection test is what
+	// the gateway returns (status code + body), and that's all gone when norma decodes the response
+	// into StreamEvent.quotaAwareTransport finds this Capture in context and fills in the status
+	// code and body for each HTTP attempt.
 	ctx, capt := llmrec.NewCapture(ctx)
 	defer logTestConnection(c, capt)
-	// 连接测试是一条单发路径,不经过 agentcore 的会话循环,因此没人往 context 上挂
-	// session id。对配了 SessionHeaderKey 的端点(如 opencode zen 强制要求
-	// x-opencode-session 头,缺了直接 400 MissingSessionID),这会导致"对话正常、
-	// 点击测试却 400"的落差。这里补挂一个一次性随机 session id,让测试与真实对话走同
-	// 一套发头逻辑;未配 SessionHeaderKey 的端点不读它,无副作用。
+	// Connection testing is a single-path path, not through the agentcore session loop, so nobody
+	// hangs the session id on context. Matching an endpoint with SessionHeaderKey (like opencode
+	// zen that requires x-opencode-session header, missing the direct 400 MissingSessionID) will
+	// cause a gap of "conversation is normal, click test but 400". A one-time random session id is
+	// attached here to keep the test running in the same header logic as the real conversation;
+	// endpoints without SessionHeaderKey do not read it, and there are no side effects.
 	ctx = transcript.WithSessionID(ctx, "conntest-"+transcript.NewSessionID())
 	start := time.Now()
-	// MaxTokens 要给足：推理模型(如 deepseek-v4-pro)在给出答案前会先产出一大段
-	// 思考(实测对一句 "ping" 也能烧 ~2900 token)。若只给 32,模型会一直卡在"思考阶段"
-	// 就撞到输出上限(finish=length)、被截断,连接测试虽仍算通(err=nil)但显示成
-	// "已中断/length/resume" 一团糟。给足预算让它把 OK 干净吐完(finish=stop)。
-	// EscalateMaxTokens 保持 false:不因截断而抬额重试,避免 resume 循环空烧。
+	// MaxTokens to be given: a reasoning model (such as deepseek-v4-pro) will output a long piece
+	// of thinking before giving an answer (in practice, a "ping" can burn ~2900 tokens). If you
+	// give only 32, the model will stay in the "thinking phase" and hit the output limit
+	// (finish=length), get cut off, and the connection test will still count (err=nil) but show
+	// "interrupted/length/resume" a mess. Give enough budget so it will vomit out OK (finish=stop).
+	// EscalateMaxTokens keeps false: do not increase the retry rate due to cutoffs, avoiding resume
+	// loops burning empty.
 	reply, err := agentcore.Run(ctx, agentcore.Options{
 		Provider:       prov,
 		SystemPrompt:   []string{"你是连接测试。直接输出两个字符 OK 即可，不要思考、不要解释、不要别的。"},
 		PermissionMode: acperm.ModeBypass,
 		MaxTurns:       1,
 		MaxTokens:      8192,
-		NonStreaming:   !c.Stream, // 用该 profile 的真实收发模式做连接测试
+		NonStreaming:   !c.Stream, // Test the connection with the real mode of the profile
 	}, "ping")
 	lat := time.Since(start)
 	if err != nil {
 		return lat, "", err
 	}
-	// err==nil 还不够：请求通了但模型一个字都不吐的情况真实存在(思考把预算烧光、
-	// 正文被安全策略吞掉、兼容层把 content 丢了)。这种配置在会话里就是"不回话",
-	// 测试却报成功——正是本项要消除的落差。没有可见正文一律判失败。
+	// err==nil is not enough: there are real cases where the request passes but the model doesn't
+	// say a word (think of burning out the budget, the body being swallowed by security policy, the
+	// compatibility layer losing the content). This configuration is "no answer" in the session,
+	// and the test reports success — the gap that this item is trying to eliminate.
 	reply = strings.TrimSpace(reply)
 	if reply == "" {
 		return lat, "", fmt.Errorf("模型无回复内容（请求已通，但未返回任何文本）")

@@ -33,8 +33,8 @@ export function NavUser({
 
   function handleLogout() {
     auth.clearToken();
-    // 硬跳转：让浏览器用已清除的 cookie 发起全新请求，
-    // middleware 才能正确读到空 token 并放行 /login
+    // Hard skip: Make the browser make a new request with the cleared cookies so that the
+    // middleware can correctly read the empty token and release /login
     window.location.href = "/login";
   }
 

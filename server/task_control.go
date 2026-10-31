@@ -149,7 +149,8 @@ func (s *Server) applyTaskControlWithCause(t *Task, action string, pauseCause er
 	return out, nil
 }
 
-// intentSummaryOf 取意图 payload 里的 summary,供删除通知在意图节点消失(真删除)前留档。
+// Gets the summary in the intent payload for archiving deletion notifications before the intent
+// node disappears (true deletion).
 func intentSummaryOf(n *db.Node) string {
 	if n == nil {
 		return ""
@@ -201,12 +202,14 @@ func (s *Server) applyIntentControl(ctx context.Context, t *Task, iid int64, act
 		t.Notify()
 		out.State = "open"
 	case "cancel":
-		// 删除支持两种模式:
-		//   soft(默认,假删除):意图停到 state='deleted'、删除原因记入 delete_reason 字段,
-		//     保留意图节点与全部产出/血缘,不再在图上另挂 fact。
-		//   hard(真删除):物理删除该意图及"仅由它支撑"的独占子孙节点(级联到叶子),避免留下
-		//     孤立数据;共享节点、goal、任务根事实保留。
-		// 两种模式都用 cancelled 触发告知 planner(意图内容 + 删除原因),让它据此重规划。
+		// Deletion supports two modes: soft (default, fake deletion): the intent stops at
+		// state='deleted', the reason for deletion is written in the delete_reason field, and the
+		// intent node and all output/family are retained, no longer attached to the graph as a
+		// fact. hard (true deletion): physically deletes the intent and its exclusive children
+		// (cascaded to the leaf) that are "supported only by it", avoiding leaving isolated data;
+		// retains the shared node, goal, and task root facts. Both modes trigger cancelled to
+		// notify the planner (intent content + reason for deletion) and have it reschedule
+		// accordingly.
 		if node.State != "running" && node.State != "paused" && node.State != "open" {
 			return out, fmt.Errorf("仅待领/运行中/已暂停的意图可以删除")
 		}
@@ -228,7 +231,7 @@ func (s *Server) applyIntentControl(ctx context.Context, t *Task, iid int64, act
 			s.cancelWorkerSide(t.ID, t.ExpID, iid)
 			t.NotifyCancelled(iid, summary, reason)
 			out.Deleted = &cleanup
-			out.State = "" // 节点已删除,前端据 Deleted 从列表移除
+			out.State = "" // Node deleted, front end removed from list by Deleted
 		} else {
 			if _, err := t.Store.SoftDeleteIntent(iid, reason); err != nil {
 				return out, err

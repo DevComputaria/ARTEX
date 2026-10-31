@@ -76,7 +76,8 @@ function tryFormatJSON(s: string): string {
   }
 }
 
-// 复制当前框内文本的小按钮。复制成功后短暂显示对勾。text 为空/仅占位符时禁用。
+// A small button to copy text in the current box. A check mark is displayed briefly after
+// successful copying. Disabled when text is empty/placeholder only.
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = React.useState(false);
   const timer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -88,14 +89,15 @@ function CopyButton({ text }: { text: string }) {
     try {
       await navigator.clipboard.writeText(text);
     } catch {
-      // navigator.clipboard 在非安全上下文(如 http 局域网)不可用，回退到 execCommand。
+      // navigator.clipboard is not available in an unsecure context (such as a http LAN), returning
+      // to execCommand.
       const ta = document.createElement("textarea");
       ta.value = text;
       ta.style.position = "fixed";
       ta.style.opacity = "0";
       document.body.appendChild(ta);
       ta.select();
-      try { document.execCommand("copy"); } catch { /* 忽略：不支持则静默 */ }
+      try { document.execCommand("copy"); } catch { /* Ignorance: Silence or Support */ }
       document.body.removeChild(ta);
     }
     setCopied(true);
@@ -139,15 +141,18 @@ export default function LLMRecordsPage() {
   const [selected, setSelected] = React.useState<LLMRecordItem | null>(null);
   const [detail, setDetail] = React.useState<LLMRecordDetail | null>(null);
   const [detailLoading, setDetailLoading] = React.useState(false);
-  // 归一化视图 / HTTP 原文视图。原文是排查 provider 侧问题的唯一依据：归一化视图
-  // 不含工具 schema，响应里也没有 tool_use 块。
+  // The source is the only basis for checking provider-side issues: the unified view does not
+  // contain a tool schema, and there is no tool_use block in the response.
   const [rawView, setRawView] = React.useState(false);
 
   const hasRaw = !!(detail?.raw_request || detail?.raw_response);
-  // 开关保持用户选择，但切到一条无原文的旧记录时自动落回解析视图，而不是显示空白。
+  // The switch retains the user &apos; s choice, but automatically returns to the parsing view when
+  // it crosses an old record without the original language, instead of displaying blanks.
   const showRaw = rawView && hasRaw;
-  // 原文请求体是 JSON，pretty-print 只改排版不改语义，便于阅读；原文响应是 SSE
-  // 帧，tryFormatJSON 解析失败会原样返回，故两边共用一个函数即可。
+  // The original request body is JSON, and pretty-print only rearranges the text without changing
+  // its semantics to make it easier to read; the original response is an SSE frame, and
+  // tryFormatJSON parsing failures are returned as they were, so a single function is sufficient
+  // for both sides.
   const reqText = showRaw
     ? detail?.raw_request && tryFormatJSON(detail.raw_request)
     : detail?.request_body && tryFormatJSON(detail.request_body);
@@ -485,8 +490,8 @@ export default function LLMRecordsPage() {
               ) : (
                 <Badge variant="destructive" className="text-xs">Error</Badge>
               )}
-              {/* 原文视图开关。旧记录没有原文，此时禁用而非静默回退，避免看着像
-                  「原文与解析一致」。 */}
+              {/* The old record has no original language, at this time disabled rather than silently returning, avoiding looking like
+                  "The original text is consistent with the analysis." */}
               <Button
                 variant={showRaw ? "secondary" : "ghost"}
                 size="sm"

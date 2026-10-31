@@ -15,7 +15,7 @@ func TestMaskedValueHidesBodyButKeepsTailHint(t *testing.T) {
 	if strings.Contains(got, "oapi.dingtalk.com") {
 		t.Fatalf("掩码值不应暴露地址主体: %q", got)
 	}
-	// 末 6 位要保留，用户才能认出是哪个机器人。
+	// The last 6 digits are kept so that the user can identify which bot is.
 	if !strings.HasSuffix(got, "123456") {
 		t.Fatalf("应保留末 6 位作为辨识提示: %q", got)
 	}
@@ -25,7 +25,8 @@ func TestMaskedValueHidesBodyButKeepsTailHint(t *testing.T) {
 }
 
 func TestMaskedValueShortSecretGivesNoHint(t *testing.T) {
-	// 短凭据如果也暴露末 6 位，等于把整个凭据暴露出去。
+	// If the short credential also exposes the last 6 bits, it is equivalent to exposing the entire
+	// credential.
 	for _, s := range []string{"abc", "abcdef", ""} {
 		got := MaskedValue(s)
 		if got != MaskedPrefix {
@@ -51,14 +52,15 @@ func TestMaskConfigMasksOnlySecrets(t *testing.T) {
 			t.Errorf("%s 应被掩码，得到 %q", k, s)
 		}
 	}
-	// 非凭据字段必须原样保留，否则 UI 无法展示。
+	// Non-credential fields must be left as they are, otherwise the UI cannot be displayed.
 	if masked["port"] != float64(587) {
 		t.Errorf("非凭据字段 port 不应改动: %v", masked["port"])
 	}
 }
 
 func TestMaskConfigUnknownKindReturnsEmpty(t *testing.T) {
-	// 渠道类型无法识别时，宁可让 UI 显示空配置，也不要把可能含凭据的原始内容吐回去。
+	// When the channel type is not recognized, it is preferable to have the UI display an empty
+	// configuration rather than returning the original content that may contain credentials.
 	got := MaskConfig("nope", map[string]any{"webhook": "https://x/y?token=LEAK"})
 	if len(got) != 0 {
 		t.Fatalf("未知渠道类型应返回空配置，得到 %v", got)
@@ -66,7 +68,7 @@ func TestMaskConfigUnknownKindReturnsEmpty(t *testing.T) {
 }
 
 func TestMaskConfigDoesNotMutateInput(t *testing.T) {
-	// 掩码是展示层行为，不能反过来把库里的真值改掉。
+	// The mask is a display layer behavior and cannot reverse-change the true value of Curie.
 	cfg := map[string]any{"webhook": "https://example.com/hook", "secret": "SECtest123456"}
 	_ = MaskConfig(KindDingTalk, cfg)
 	if IsMasked(cfg["secret"].(string)) {
@@ -76,7 +78,7 @@ func TestMaskConfigDoesNotMutateInput(t *testing.T) {
 
 func TestMergeConfigKeepsStoredOnMaskedIncoming(t *testing.T) {
 	stored := map[string]any{"webhook": "https://real/hook", "secret": "REALSECRET", "method": "POST"}
-	// 用户只改了 method，浏览器提交的是掩码值+新 method。
+	// The user only changes the method, and the browser submits the mask value + new method.
 	incoming := map[string]any{
 		"webhook": MaskedValue("https://real/hook"),
 		"secret":  MaskedValue("REALSECRET"),
@@ -97,7 +99,7 @@ func TestMergeConfigEmptyStringClears(t *testing.T) {
 	if _, ok := got["secret"]; ok {
 		t.Fatalf("空串应清空该字段，得到 %v", got)
 	}
-	// 没提到的字段保留（局部更新语义）。
+	// Fields not mentioned are retained (locally updated semantics).
 	if got["webhook"] != "https://real/hook" {
 		t.Fatalf("未提及的字段应保留，得到 %v", got)
 	}
@@ -114,18 +116,19 @@ func TestMergeConfigKeepsUnmentionedStoredKeys(t *testing.T) {
 	}
 }
 
-// TestPrepareConfigUpdateBlocksDestinationSwap 是本包最重要的一条安全不变量：
-// **改目标地址不能把旧凭据带过去**。
+// TestPrepareConfigUpdateBlocksDestinationSwap is the most important security invariant in this
+// package: **Changing the destination address cannot carry over the old credentials**.
 //
-// 这些用例用的正是攻击形状的输入（只改地址、对凭据避而不谈），
-// 而不是「防御逻辑的正确输入」——只测后者的话，防御没生效也照样全绿。
+// These use cases use the exact input of the attack form (change only the address, avoiding the
+// credentials), not the "correct input of the defense logic" - if only the latter is tested, the
+// defense is still green.
 func TestPrepareConfigUpdateBlocksDestinationSwap(t *testing.T) {
 	cases := []struct {
 		name     string
 		kind     string
 		stored   map[string]any
 		incoming map[string]any
-		// wantMissing 是预期被点名的凭据键。
+		// wantMissing is the credential key that is expected to be called.
 		wantMissing string
 	}{
 		{
@@ -160,7 +163,8 @@ func TestPrepareConfigUpdateBlocksDestinationSwap(t *testing.T) {
 			wantMissing: "password",
 		},
 		{
-			// 掩码值 = 「沿用旧凭据」，在地址变更的语境下同样必须拒绝。
+			// The mask value = "Keep old credentials" must also be rejected in the context of
+			// address change.
 			name:        "回传掩码凭据 + 新地址",
 			kind:        KindTelegram,
 			stored:      map[string]any{"bot_token": "123456:REAL", "chat_id": "1", "base_url": "https://api.telegram.org"},
@@ -194,7 +198,7 @@ func TestPrepareConfigUpdateBlocksDestinationSwap(t *testing.T) {
 			if !found {
 				t.Fatalf("应点名缺失的凭据键 %q，得到 %v", tc.wantMissing, target.Missing)
 			}
-			// 错误信息要能指导操作者怎么修。
+			// The error message should be able to guide the operator how to fix it.
 			if !strings.Contains(err.Error(), tc.wantMissing) {
 				t.Errorf("错误信息应提到 %q: %v", tc.wantMissing, err)
 			}
@@ -202,8 +206,8 @@ func TestPrepareConfigUpdateBlocksDestinationSwap(t *testing.T) {
 	}
 }
 
-// TestPrepareConfigUpdateAllowsLegitimateEdits 反向用例：正常的编辑不能被误拦，
-// 否则这个防护会因为「太烦」而被绕过或删掉。
+// TestPrepareConfigUpdateAllowsLegitimateEdits Reverse use case: Normal editing cannot be
+// inadvertently blocked, otherwise the protection will be bypassed or deleted as "too annoying".
 func TestPrepareConfigUpdateAllowsLegitimateEdits(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -261,38 +265,38 @@ func TestPrepareConfigUpdateAllowsLegitimateEdits(t *testing.T) {
 	}
 }
 
-// TestPrepareConfigUpdatePortTypeTolerance 覆盖一个容易误判的细节：
-// 前端提交的端口是 JSON number（float64），库里读回来也是 float64，
-// 但两个值的类型可能不同（如 int vs float64）。用 == 比较会把「没改」判成「改了」，
-// 从而对只改了名字的用户弹出「请重新填写密码」——假警报会让人不再信任这个防护。
+// TestPrepareConfigUpdatePortTypeTolerance covers a misunderstanding: The port submitted by the
+// front-end is JSON number (float64), which is also read back by the Curry as float64, but the two
+// values may be of different types (e.g. int vs float64). == comparison will interpret "no change"
+// as "changed", and thus pop up "refill password" to users who have only changed their name — a
+// false alarm that would distrust this protection.
 func TestPrepareConfigUpdatePortTypeTolerance(t *testing.T) {
 	stored := map[string]any{"host": "smtp.corp.com", "port": float64(587), "password": "PW"}
-	// 同一个端口，以 int 形式提交。
+	// Same port, submitted in the form of an int.
 	if _, err := PrepareConfigUpdate(KindEmail, stored, map[string]any{"port": 587}); err != nil {
 		t.Fatalf("端口值相同（仅类型不同）不应被判为地址变更: %v", err)
 	}
-	// 真的换了端口则必须拦。
+	// The port must be blocked.
 	if _, err := PrepareConfigUpdate(KindEmail, stored, map[string]any{"port": 25}); err == nil {
 		t.Fatal("端口变更应被拦下")
 	}
 }
 
-// TestPrepareConfigUpdateSurvivesRepeatedSaveWithBlankDestination 覆盖「可留空的
-// 目的地字段」这条路径：Telegram 的 base_url 留空表示用官方 API 地址。
+// TestPrepareConfigUpdateSurvivesRepeatedSaveWithBlankDestination Overrides the "can be left empty"
+// path: Telegram's base_url is left empty to indicate that it uses the official API address.
 //
-// 曾经这里会让渠道从第二次保存起永久保存失败：
+// Here is what would cause the channel to fail to save permanently from the second save:
 //
-//	新建时库里存下 base_url:""（创建路径直接存前端提交的 config，不走 MergeConfig）
-//	→ 第一次保存，MergeConfig 把空串当显式清空、delete 掉该键
-//	→ 第二次保存，incoming 仍是 ""、而 stored 里已经没这个键，被判成「地址变了」
-//	→ bot_token 是掩码回显值 → 400「目标地址已变更，请同时重新填写凭据字段」
+//	The first time you save the library, MergeConfig clears the empty string as explicit, deletes
+//	the key, and then saves it again. Incoming is still "", but stored has no key, and is judged to
+//	be "address changed".
 //
-// 用户什么都没改，却从此再也存不上，除非重新粘贴一遍 Bot Token。
+// The user does not change anything, but he cannot save it again unless he re-pastes the Bot Token.
 func TestPrepareConfigUpdateSurvivesRepeatedSaveWithBlankDestination(t *testing.T) {
 	stored := map[string]any{"bot_token": "123:ABC", "chat_id": "-100", "base_url": ""}
 
-	// 前端 buildConfig() 对该渠道的每个字段定义都提交一个值：凭据回填掩码，
-	// 空文本框提交空串。这里完整复现它的输出，而不是只提交「改动的键」。
+	// The front-end buildConfig() submits a value for each field definition in the channel: an
+	// empty text box submits an empty string based on the return mask.
 	submit := func() map[string]any {
 		return map[string]any{
 			"bot_token": MaskedValue("123:ABC"),
@@ -301,7 +305,7 @@ func TestPrepareConfigUpdateSurvivesRepeatedSaveWithBlankDestination(t *testing.
 		}
 	}
 
-	// 第一次保存：只改了渠道名字，config 原样回传。
+	// First save: Only change the channel name, config returns as it is.
 	merged, err := PrepareConfigUpdate(KindTelegram, stored, submit())
 	if err != nil {
 		t.Fatalf("第一次保存被误拦: %v", err)
@@ -310,27 +314,29 @@ func TestPrepareConfigUpdateSurvivesRepeatedSaveWithBlankDestination(t *testing.
 		t.Fatal("前提已变：空串应被 MergeConfig 删除——本用例要覆盖的正是「键消失之后」那一步")
 	}
 
-	// 第二次保存：提交内容与上次完全一致，用户什么都没改。
+	// Second save: The submission is exactly the same as the previous one, with no changes by the
+	// user.
 	merged2, err := PrepareConfigUpdate(KindTelegram, merged, submit())
 	if err != nil {
 		t.Fatalf("第二次保存被误拦（用户什么都没改）: %v", err)
 	}
-	// 第三次，确认不是「只错一次」而是稳定可保存。
+	// Third, confirm that it is not “only once wrong,” but stable and safe.
 	if _, err := PrepareConfigUpdate(KindTelegram, merged2, submit()); err != nil {
 		t.Fatalf("第三次保存被误拦: %v", err)
 	}
-	// 凭据必须一路保留下来，没有被空串逻辑连带清掉。
+	// The credentials must be retained all the way, not erased by empty string logic.
 	if got := merged2["bot_token"]; got != "123:ABC" {
 		t.Fatalf("Bot Token 应沿用原值，得到 %v", got)
 	}
 }
 
-// TestPrepareConfigUpdateStillGuardsBlankDestinationChanges 是上一条用例的配对
-// 断言：把空串与「键不存在」视为等价，**不能**连带放过真正的地址变更。
-// 这两个方向都是真实的凭据外发路径——Telegram 的 Bot Token 走在 URL 路径里，
-// 换了 base_url 就等于把 Token 送给新地址。
+// TestPrepareConfigUpdateStillGuardsBlankDestinationChanges is a match for the previous use case,
+// which states that an empty string is equivalent to "key does not exist" and cannot be **linked to
+// any change in the real address. Both directions are real credential outbound paths — Telegram's
+// Bot Token goes in the URL path, so changing base_url is equivalent to sending the Token to the
+// new address.
 func TestPrepareConfigUpdateStillGuardsBlankDestinationChanges(t *testing.T) {
-	// 方向一：从「空」（官方地址）换到自建地址。
+	// Direction 1: Change from "empty" (official address) to a self-made address.
 	official := map[string]any{"bot_token": "123:ABC", "chat_id": "-100"}
 	if _, err := PrepareConfigUpdate(KindTelegram, official, map[string]any{
 		"bot_token": MaskedValue("123:ABC"),
@@ -339,7 +345,8 @@ func TestPrepareConfigUpdateStillGuardsBlankDestinationChanges(t *testing.T) {
 		t.Fatal("从官方地址换到自建地址必须要求重新填写 Token")
 	}
 
-	// 方向二：把自建地址清空（= 换回官方 API）同样是地址变更。
+	// Direction two: Clearing the custom address (= switching back to the official API) is also an
+	// address change.
 	proxied := map[string]any{"bot_token": "123:ABC", "base_url": "https://proxy.internal/bot"}
 	if _, err := PrepareConfigUpdate(KindTelegram, proxied, map[string]any{
 		"bot_token": MaskedValue("123:ABC"),
@@ -350,7 +357,8 @@ func TestPrepareConfigUpdateStillGuardsBlankDestinationChanges(t *testing.T) {
 }
 
 func TestDestinationKeysDeclaredForEveryKind(t *testing.T) {
-	// 与 SecretKeys 同理：渠道若忘记声明目的地键，PrepareConfigUpdate 就保护不到它。
+	// Similar to SecretKeys: if a channel forgets to declare the destination key,
+	// PrepareConfigUpdate cannot protect it.
 	for kind, ch := range registry {
 		if len(ch.DestinationKeys()) == 0 {
 			t.Errorf("渠道 %s 未声明目的地键，改地址带出凭据的防护对它无效", kind)
@@ -362,8 +370,9 @@ func TestDestinationKeysDeclaredForEveryKind(t *testing.T) {
 }
 
 func TestSecretKeysDeclaredForEveryKind(t *testing.T) {
-	// 编译器已经强制每个渠道实现 SecretKeys，这里再确认一遍「没有渠道在掩码上
-	// 交白卷」——返回空切片的渠道意味着它的凭据会明文回显到浏览器。
+	// The compiler has already forced SecretKeys to be implemented for each channel, so here again,
+	// "no channels on the mask are blank" — returning a channel with an empty slice means that its
+	// credentials will be explicitly returned to the browser.
 	expect := map[string]bool{
 		KindDingTalk: true, KindFeishu: true, KindWeCom: true,
 		KindWebhook: true, KindTelegram: true, KindEmail: true,
@@ -379,23 +388,24 @@ func TestSecretKeysDeclaredForEveryKind(t *testing.T) {
 	}
 }
 
-// TestPrepareConfigUpdateRejectsMaskedInContainer 覆盖审计指出的一处口子：
-// 把掩码哨兵塞进**非字符串**结构（如 webhook.headers 是个对象）时，
-// MergeConfig 只认「字符串且带前缀」为掩码，于是字面量 "__masked__" 会被当成
-// 真实头值存进库——后续鉴权静默失效，且没有任何报错。
+// TestPrepareConfigUpdateRejectsMaskedInContainer Override audit pointed out a flaw: When the mask
+// sentinel is inserted into a **non-string** structure (such as webhook.headers is an object),
+// MergeConfig only recognizes "strings with prefixes" as masks, so the word count "__masked__" is
+// treated as the real header value stored in the vault—the subsequent validation fails silently and
+// without any errors.
 func TestPrepareConfigUpdateRejectsMaskedInContainer(t *testing.T) {
 	stored := map[string]any{
 		"url":     "https://legit.example.com/hook",
 		"headers": map[string]any{"Authorization": "Bearer REAL"},
 	}
-	// 对象内部夹带掩码哨兵。
+	// The object is carried inside by a masked sentinel.
 	incoming := map[string]any{
 		"headers": map[string]any{"Authorization": MaskedPrefix},
 	}
 	if _, err := PrepareConfigUpdate(KindWebhook, stored, incoming); err == nil {
 		t.Fatal("结构体内部夹带掩码哨兵应被拒绝（否则会把字面量存进库）")
 	}
-	// 整体提交对象（真实新值）照常接受。
+	// The entire commit object (true new value) is accepted as usual.
 	ok := map[string]any{"headers": map[string]any{"Authorization": "Bearer NEW"}}
 	if _, err := PrepareConfigUpdate(KindWebhook, stored, ok); err != nil {
 		t.Fatalf("正常提交新请求头不应被拦: %v", err)

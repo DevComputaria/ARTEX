@@ -9,14 +9,14 @@ import { ArrowUpCircleIcon } from "lucide-react";
 import { api } from "@/lib/api";
 
 /**
- * 顶栏的"有新版本"提示：整页加载时查一次，有更新就在版本号旁边亮出来，
- * 点击直达系统配置页的「版本与更新」卡片。
+ * The "New Version" message in the top bar: checks once the page is loaded, and updates are highlighted next to the version number,
+ * Click the "Versions and Updates" tab to go directly to the system configuration page.
  *
- * 后端对 GitHub 的查询结果有 30 分钟缓存，所以这里每次挂载都查一次是安全的
- * ——未认证的 GitHub API 只有 60 次/小时/IP，没有那层缓存的话，多开几个标签页
- * 就会把配额耗光，之后真想更新反而查不动。
+ * The backend has a 30-minute cache of GitHub queries, so it's safe to check once every time you mount.
+ * 60 times/hour/IP for unauthenticated GitHub APIs, and a few more tab pages if there is no cache.
+ * The quotas are then exhausted and the actual renewal is impossible.
  *
- * 查询失败一律静默：顶栏不是报错的地方，用户进设置页点「检查更新」会看到原因。
+ * The query failures are always silent: the top bar is not where errors are reported, and the user can see the reason by going to the settings page at the point "Check for updates".
  */
 export function UpdateBadge() {
   const [latest, setLatest] = React.useState("");
@@ -26,11 +26,12 @@ export function UpdateBadge() {
     api
       .checkUpdate()
       .then((r) => {
-        // has_update 已经包含了"版本号可比较"的判断，开发构建不会亮这个提示。
+        // has_update already contains the "version number comparable" judgment, and development
+        // builds will not light this prompt.
         if (alive && r.has_update && r.latest) setLatest(r.latest.replace(/^v(?=\d)/, ""));
       })
       .catch(() => {
-        // 静默：没网 / GitHub 限流都不该在顶栏弹错误。
+        // Silence: No network / GitHub limits should not be played in the top bar error.
       });
     return () => {
       alive = false;
@@ -45,7 +46,7 @@ export function UpdateBadge() {
       title={`发现新版本 ${latest}，点击前往更新`}
       className="inline-flex items-center gap-1.5 rounded-full bg-primary px-2.5 py-1 font-medium text-primary-foreground text-xs transition-opacity hover:opacity-90"
     >
-      {/* 呼吸点：顶栏元素很多，纯文字容易被忽略，动效让它一眼可见。 */}
+      {/* Breath points: The top bar is full of elements, plain text is easy to overlook, animation makes it visible at a glance. */}
       <span className="relative flex size-1.5">
         <span className="absolute inline-flex size-full animate-ping rounded-full bg-primary-foreground opacity-75" />
         <span className="relative inline-flex size-1.5 rounded-full bg-primary-foreground" />

@@ -10,8 +10,8 @@ import (
 	"time"
 )
 
-// TestDeleteFinding verifies删除漏洞 removes both the findings row and its
-// originating exploration node (kind='finding').
+// TestDeleteFinding verifies that the findings row and its originating exploration node
+// (kind='finding') are removed.
 func TestDeleteFinding(t *testing.T) {
 	d, err := Open(testDSN(t))
 	if err != nil {

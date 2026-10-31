@@ -1,20 +1,22 @@
 @echo off
-rem 控制台切 UTF-8，否则本文件里的中文在 GBK 终端下是乱码。
+rem The console must be UTF-8, otherwise the Chinese in this file will be randomly encoded under the
+rem GBK terminal.
 chcp 65001 >nul 2>&1
-rem ARTEX 守护启动脚本（Windows）
+rem ARTEX Guardian Startup Script (Windows)
 rem
-rem 用法：
-rem   start.bat                  前台运行（Ctrl-C 停止）
-rem   start.bat -addr :9000      额外参数原样透传给 artex
+rem Usage:
+rem   start.bat Run in the foreground (Ctrl-C stops) start.bat -addr :9000 Additional parameters are
+rem   passed to artex as they are
 rem
-rem 它只做一件事：把 artex.exe 跑起来，进程退出后按退出码决定要不要再拉起。
+rem It does only one thing: it runs artex.exe, and after the process exits, it uses the exit code to
+rem decide whether to restart.
 rem
-rem   0      用户正常停止     -> 退出循环
-rem   75     程序请求重启     -> 立刻重跑（页面点了"一键更新"或"回滚"）
-rem   其他   崩溃             -> 退避后重跑（1->2->4…最多 60 秒）
+rem   0 User stops normally -> exit loop 75 Program request restart -> restart immediately (page
+rem   clicked "refresh one-click" or "roll back") Other Crash -> restart after avoidance (1->2->4...
+rem   up to 60 seconds)
 rem
-rem 下载、SHA256 校验、换装都不在这里，全部由 artex 自己在启动时完成
-rem （selfupdate 包）。脚本保持傻瓜化，详见 start.sh 顶部的说明。
+rem Downloading, SHA256 validation, and reinstalling are not done here, all done by artex itself at
+rem startup (selfupdate package).
 
 setlocal enabledelayedexpansion
 cd /d "%~dp0"
@@ -39,14 +41,15 @@ if "!code!"=="0" (
 )
 
 if "!code!"=="%RESTART_CODE%" (
-	rem 更新/回滚已就绪：重跑后 artex 会在启动时完成换装。
+	rem Update/rollback ready: After rebooting, artex will complete the reload at startup.
 	echo [artex] 请求重启（应用新版本）…
 	set /a delay=1
 	goto loop
 )
 
 echo [artex] 异常退出 ^(code=!code!^)，!delay!s 后重启 1>&2
-rem timeout 在被重定向的控制台里会失败，用 ping 兜底（延时 N 秒需要 N+1 次）。
+rem timeout fails in the redirected console, and ping is used to resolve it (N+1 times for N seconds
+rem of delay).
 set /a pings=!delay!+1
 ping -n !pings! 127.0.0.1 >nul 2>&1
 set /a delay=!delay!*2

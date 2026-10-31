@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ARTEX 安装脚本：① 全部 Docker  ② 本地编译运行
+# ARTEX Installation Script: ① All Docker ② Locally compiled run
 set -euo pipefail
 cd "$(cd "$(dirname "$0")" && pwd)"
 
@@ -10,7 +10,7 @@ die(){  printf '\033[31m[x]\033[0m %s\n' "$*" >&2; exit 1; }
 ask(){  local p="$1" d="${2:-}" a; read -rp "$p${d:+ [$d]}: " a; echo "${a:-$d}"; }
 rand(){ head -c 18 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 24; }
 
-# ── docker 环境检测 / 自动安装 ───────────────────
+# ── docker environment detection / automatic installation ──────────────────
 ensure_docker(){
   if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
     ok "已检测到 docker 与 docker compose"; return
@@ -30,7 +30,8 @@ ensure_docker(){
   esac
 }
 
-# ── ① 全部 Docker ───────────────────────────────
+# ── ① All Docker
+# ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 install_docker(){
   ensure_docker
   if [ ! -f .env ]; then
@@ -52,7 +53,8 @@ install_docker(){
   info "查看日志：docker compose logs -f artex"
 }
 
-# ── ② 本地编译运行 ──────────────────────────────
+# ── ② Local compilation run
+# ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 install_local(){
   echo "数据库安装方式："
   echo "  1) 连接已有 PostgreSQL"
@@ -74,7 +76,7 @@ install_local(){
       DB_SSL="$(ask 'sslmode (disable/require)' disable)" ;;
   esac
 
-  # 生成 config.json
+  # Generate config.json
   cat > config.json <<JSON
 {
   "database": {
@@ -89,11 +91,11 @@ install_local(){
 JSON
   ok "已生成 config.json"
 
-  # go 环境检查
+  # go Environmental Inspection
   command -v go >/dev/null 2>&1 || die "未检测到 Go，请先安装 Go（>=1.26）：https://go.dev/dl/"
   ok "Go: $(go version)"
 
-  # 内嵌前端需要 node 出静态产物
+  # The embedded front-end requires node to output a static product
   if command -v npm >/dev/null 2>&1; then
     info "构建前端静态产物…"
     ( cd web && npm ci && npm run build:static )

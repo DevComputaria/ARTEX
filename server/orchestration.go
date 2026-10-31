@@ -24,11 +24,12 @@ func jsonResult(v any) (actool.Result, error) {
 	return actool.Text(string(b)), nil
 }
 
-// 本文件实现 P2「跨任务编排工具集」(docs/跑分编排 §2 P2)。这些是 host 工具——需要
-// 访问 Manager(任意任务的 Store)、Engine(暂停)、以及建任务流程,所以住在 server 层。
-// 读类工具把「现有 per-task 工具」重定向到目标任务的 store 上跑(建一个临时 ToolSet
-// 并 Call 其对应工具),从而复用完全相同的逻辑;控制类(spawn/pause)直接调 Manager/Engine。
-// 它们像流量工具一样 seed 进 tools 表、按 agent 绑定(只绑给编排 agent 才可见)。
+// This document implements P2's "cross-task scheduling toolset" (docs/run scheduling §2 P2). These
+// are host tools - they need access to Manager (store for any task), Engine (pause), and build task
+// processes, so they live on the server layer. Read classes redirect existing per-task tools to run
+// on the store of the target task (build a temporary ToolSet and Call its corresponding tool) using
+// exactly the same logic; control classes (spawn/pause) directly tune Manager/Engine. They seed
+// into the tools table like flow classes, and bind by agent (only bind to the scheduling agent).
 
 // hostTools is the runtime host-tool provider fed to ToolAugment: traffic tools
 // (gated by capture) + cross-task orchestration tools + user-defined custom tools.
@@ -40,7 +41,7 @@ func jsonResult(v any) (actool.Result, error) {
 func (s *Server) hostTools() ([]actool.CoreTool, map[string][]string) {
 	tools := append(s.m.HostTools(), s.orchestrationTools()...)
 	tools = append(tools, s.findingRetestTools()...)
-	tools = append(tools, s.platformTools()...) // 平台操作工具(建改 skill/工具/MCP，给 Auto 用)
+	tools = append(tools, s.platformTools()...) // Platform operating tool (build skill/tool/MCP, for Auto)
 	custom, err := s.customTools()
 	if err != nil {
 		log.Printf("[custom-tool] 加载失败: %v", err)
@@ -166,8 +167,8 @@ func (s *Server) delegateToTask(ctx context.Context, in json.RawMessage, pick fu
 	if s.m.Assets() != nil {
 		tsx.SetAssetStore(s.m.Assets(), s.m.Assets().Companies())
 	}
-	tsx.SetNotify(t.Notify)         // 通用唤醒（无专用回调的写操作走它；读工具为 no-op）
-	tsx.SetNotifyHint(t.NotifyHint) // add_hint → 记一条「人新增了 N 条战略提示：…」触发并唤醒 planner
+	tsx.SetNotify(t.Notify)         // General awakening (no dedicated callback writes it; reads no-op)
+	tsx.SetNotifyHint(t.NotifyHint) // add_hint → Notes a "person added N new strategy hints:..." trigger and wakes up the planner
 	return pick(tsx).Call(ctx, inner, nil)
 }
 
@@ -272,7 +273,8 @@ func (s *Server) toolSpawnTask() actool.CoreTool {
 			if a.TimeoutSeconds < 0 {
 				a.TimeoutSeconds = 0
 			}
-			// 只读继承来源任务：数量上限 + 每个 id 有效/去重/存在，校验规则与 HTTP 建任务一致。
+			// Read-only inheritance source tasks: number cap + valid/unloaded/existing per id,
+			// validation rules consistent with HTTP build tasks.
 			if len(a.SourceTaskIDs) > db.MaxTaskSourceCount {
 				return actool.Errorf(fmt.Sprintf("关联任务最多选择 %d 个", db.MaxTaskSourceCount)), nil
 			}
@@ -320,9 +322,10 @@ func (s *Server) toolSpawnTask() actool.CoreTool {
 					_ = s.m.PG().SetParentRef(id, a.ParentRef)
 				}
 			}
-			// 共享的建后流程,与 HTTP 建任务(server.go createTask)复用同一段 launchTask:
-			// seed + 后台可见地做目标分解(第0轮/LLM步骤/逐条goal) + engine.Run。
-			// seed_first_intent 默认 false(标准先规划再执行);简单任务可开启直接下发一 work 测试。
+			// Shared post-build process, duplicating the same section as HTTP build task (server.go
+			// createTask) launchTask: seed + backend visiblely decomposes goals (round 0/LLM
+			// steps/line by line goals) + engine.Run. seed_first_intent default false (standard
+			// plan-first-run); simple tasks can be started directly with a work test.
 			s.launchTask(t, a.Description+" "+a.Goal, a.SeedFirstIntent)
 			return actool.Text(fmt.Sprintf("task created: %s", t.ID)), nil
 		})
@@ -438,7 +441,7 @@ func (s *Server) toolUpdateFindingReport() actool.CoreTool {
 				Report          string          `json:"report"`
 			}
 			_ = json.Unmarshal(in, &a)
-			nodeID := parseProfileID(a.FindingID) // 复用「数字或数字字符串」解析
+			nodeID := parseProfileID(a.FindingID) // Reuse of "number or number string" parsing
 			if nodeID <= 0 {
 				return actool.Errorf("finding_id 无效"), nil
 			}
@@ -471,8 +474,9 @@ func (s *Server) deriveTaskStatus(t *Task) string {
 // are bindable per-agent (default: bound to nobody — opt-in for orchestration
 // agents). First-insert only, like the traffic seeds.
 func (s *Server) seedOrchestrationTools() {
-	// task-op + platform tools default-bind to the built-in Auto agent (它天生用来
-	// 操作平台)。SeedTool 首插入生效;老库已 seed 的行由 seedAutoDefaultBindings 补绑。
+	// task-op + platform tools default-bind to the built-in Auto agent (it is natively used to
+	// operate the platform). The SeedTool first insert takes effect; the old library has been
+	// replaced by the seedAutoDefaultBindings line in seed.
 	autoAgents, _ := json.Marshal([]string{"auto"})
 	for _, t := range s.orchestrationTools() {
 		schema, _ := json.Marshal(t.InputSchema())
@@ -491,28 +495,28 @@ func (s *Server) seedOrchestrationTools() {
 	s.seedPlannerDefaultBindings()
 	s.seedPlannerListAssetsBinding()
 	s.seedCompanyScopeRebind()
-	s.seedWorkerReadToolsUnbind() // list_facts/list_companies/list_worker_traces 从 worker 默认解绑(一次性)
-	s.seedWorkerReadbackRebind()  // 修复旧迁移误删：把 search_all_worker_traces/get_worker_trace/node_detail 补绑回 worker(一次性)
+	s.seedWorkerReadToolsUnbind() // list_facts/list_companies/list_worker_traces Unbind from worker default (one-time)
+	s.seedWorkerReadbackRebind()  // Fix old migration error: replace search_all_worker_traces/get_worker_trace/node_detail with worker (once)
 	s.seedAutoReportFindingBinding()
 	s.unbindGoalMetDefault()
-	s.reseedGoalsPrompt()             // goals 提示词加入「抽操作约束」步 → 旧库追加一版新默认(一次性)
-	s.reseedMainAgentPrompt()         // mainagent 提示词加入「目标达成后 add_intent 反问是否建目标」(一次性)
-	s.reseedPlannerPrompt()           // planner 提示词:重写「0 意图」正当理由 + 加量化验收核对(一次性)
-	s.reseedWorkerPrompt()            // worker 提示词:加否定结论证据门槛(一次性)
-	s.seedReporterAgent()             // 预置「报告撰写」agent + 工具绑定 + finding 触发器(一次性)
-	s.upgradeReporterTriggerMessage() // 老库补迁移:让 reporter 回传 evidence_version(一次性)
-	s.seedFindingTrafficTools()       // 增加可选证据参数及只读证据工具，保留用户配置
+	s.reseedGoalsPrompt()             // goals prompt Add "pull constraint" step → Add a new default version of the old library (one-time)
+	s.reseedMainAgentPrompt()         // mainagent prompt added "Add_intent Asks If Target Is Created After Target Is Achieved" (one-time)
+	s.reseedPlannerPrompt()           // planner Hint: Rewrite "0 intent" justification + incremental acceptance check (one-time)
+	s.reseedWorkerPrompt()            // worker Hint: Plus negative conclusion proof threshold (one-time)
+	s.seedReporterAgent()             // Preset "Report Writing" agent + tool binding + finding trigger (one-time)
+	s.upgradeReporterTriggerMessage() // 1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1.1
+	s.seedFindingTrafficTools()       // Added optional evidence parameters and read-only evidence tools, retaining user configuration
 	s.seedFindingWorkflowTools()
-	// 注：pentest 的默认工具绑定无需迁移——BuiltinToolSeeds 在全新初始化时就把
-	// list_assets/insert_assets/report_finding/list_findings/list_companies 连同
-	// pentest 一起 seed 好了（项目尚无旧库，不做迁移）。
+	// Note: The default tool bindings for pentest do not require migration — BuiltinToolSeeds seeds
+	// list_assets/insert_assets/report_finding/list_findings/list_companies with pentest at the
+	// fresh initialization (the project does not have an old library, so no migration).
 }
 
 // refreshBuiltinToolSchemas propagates code schema/description changes on the
 // orchestration + platform tools into already-seeded rows ONCE per version flag —
-// SeedTool is first-insert-only, so a new param (e.g. spawn_task 的 llm_profile) never
-// reaches an old DB otherwise. Preserves each tool's agent binding + enabled flag.
-// Bump the flag whenever these tools' schemas/descriptions change in code.
+// SeedTool is first-insert-only, so a new param (e.g. spawn_task's llm_profile) never reaches an
+// old DB otherwise. Preserves each tool's agent binding + enabled flag. Bump the flag whenever
+// these tools' schemas/descriptions change in code.
 func (s *Server) refreshBuiltinToolSchemas() {
 	const flag = "tool_schema_refresh_v7_list_facts_paging"
 	if v, _, _ := s.m.pg.GetSetting(flag); v == "true" {
@@ -525,13 +529,16 @@ func (s *Server) refreshBuiltinToolSchemas() {
 			log.Printf("[tools] refresh %s schema failed: %v", t.Name(), err)
 		}
 	}
-	// 同时把部分内置 agent 工具刷成代码默认：
-	//   - goal_met：旧库 seed 的描述带“结束本轮规划”的误导，会让 planner 把它当成
-	//     “结束空轮”的手段、刚开跑就误判整个任务完成。
-	//   - insert_assets：新增 related 入参(标记资产是否与当前任务相关、决定是否入覆盖度)，
-	//     SeedTool 首插入only，旧库已 seed 的 schema 否则收不到这个新参数。
-	//   - list_facts：改为分页，新增 limit/before/q 入参；旧库已 seed 的空 schema 否则
-	//     在工具管理页显示「无参数」，模型也拿不到这几个参数说明。
+	// And make some of the built-in agent tools code defaults:
+	// - goal_met: the old seed library description was misleadingly labeled "end this round of
+	// planning", which would make the planner mistake it as a means to "end the empty round" and
+	// misjudge the entire task as completed at the start.
+	// - insert_assets: new related entry (marking whether assets are relevant to the current task,
+	// deciding whether to include coverage), SeedTool first inserts only, the old library has
+	// already seed schema otherwise does not receive this new parameter.
+	// - list_facts: changed to a subpage, new limit/before/q entry added; empty schema of the old
+	// library that has been seeded otherwise it will show "no parameters" in the tool management
+	// page and the model will not get the parameter description.
 	refreshBuiltin := map[string]bool{"goal_met": true, "insert_assets": true, "list_facts": true}
 	for _, sd := range agent.BuiltinToolSeeds() {
 		if !refreshBuiltin[sd.Key] {
@@ -563,26 +570,28 @@ func (s *Server) unbindGoalMetDefault() {
 	_ = s.m.pg.SetSetting(flag, "true")
 }
 
-// reseedGoalsPrompt 把 goals 目标拆解器的提示词刷成【当前代码默认】——因为默认正文新增了
-// 「先抽操作约束(set_constraints)再拆目标」这一步,而 SeedPromptIfEmpty 首插入only,旧库
-// 已有的 version 1 收不到这步。这里用版本管理【追加一个新版本】并切过去(ResetPromptToDefault),
-// 旧的版本仍保留在历史里,用户若自定义过可从版本记录找回。settings flag 守卫 → 只做一次;
-// 以后默认再变就 bump 这个 flag。全新库无需处理(SeedPromptIfEmpty 已 seed 最新默认)。
+// reseedGoalsPrompt prints the goals parser prompt to [current code default] — because the default
+// body adds a new step called "set_constraints before unsetting goals", and SeedPromptIfEmpty
+// inserts only first, the old library version 1 does not receive this step. Here, use version
+// control [add a new version] and ResetPromptToDefault, the old version is still in history, and
+// users can get it back from the version log if they have customized it. settings flag guard → do
+// only once; after that, the default is bump this flag.
 func (s *Server) reseedGoalsPrompt() {
 	const flag = "goals_prompt_constraint_step_v1"
 	if v, _, _ := s.m.pg.GetSetting(flag); v == "true" {
 		return
 	}
-	defer func() { _ = s.m.pg.SetSetting(flag, "true") }() // 无论成功与否只尝试一次
+	defer func() { _ = s.m.pg.SetSetting(flag, "true") }() // Try it once, whether you succeed or not.
 	a, err := s.m.pg.GetAgentByKey("goals")
 	if err != nil || a == nil {
-		return // 全新库尚未建 agent 行时,seedPrompts 会直接 seed 最新默认,无需此迁移
+		return // If the new library has not yet created an agent row, seedPrompts will use the latest seed default without this migration.
 	}
 	tmpl := agent.BuiltinPromptSeeds()["goals"]
 	if tmpl == "" {
 		return
 	}
-	// 全新库 seedPrompts 已 seed 最新默认 → 当前版本已等于代码默认,不必再追加重复版本。
+	// New library seedPrompts have been seed latest default → current version is now the code
+	// default, no need to add duplicate versions.
 	if cur, err := s.m.pg.CurrentPrompt(a.ID); err == nil && cur == tmpl {
 		return
 	}
@@ -593,26 +602,29 @@ func (s *Server) reseedGoalsPrompt() {
 	log.Printf("[prompts] goals 提示词已追加新默认版本(加入抽操作约束步,一次性)")
 }
 
-// reseedMainAgentPrompt 把 mainagent 提示词刷成【当前代码默认】——默认正文新增了「目标全部
-// 达成后 add_intent 直投意图时,反问人是否登记为正式目标」这段引导,而 SeedPromptIfEmpty 首插入
-// only,旧库已有版本收不到。用版本管理【追加一个新版本】并切过去(ResetPromptToDefault),旧版本仍
-// 保留在历史里,用户若自定义过可从版本记录找回。settings flag 守卫 → 只做一次。全新库无需处理
-// (SeedPromptIfEmpty 已 seed 最新默认)。与 reseedGoalsPrompt 完全同构。
+// reseedMainAgentPrompt prints the mainagent prompt to [current code default] — the default body
+// has a new instruction, "When all goals are reached, add_intent will ask if you want to register
+// as a formal goal" and SeedPromptIfEmpty inserts only, so that the old library does not receive
+// the existing version. Use version control to [add a new version] and ResetPromptToDefault, so
+// that the old version is still in the history and can be retrieved from the version log if the
+// user has customized it. settings flag guard → Do only once. No need to process the entire new
+// library (SeedPromptIfEmpty is now the seed latest default).
 func (s *Server) reseedMainAgentPrompt() {
 	const flag = "mainagent_prompt_goalless_intent_v1"
 	if v, _, _ := s.m.pg.GetSetting(flag); v == "true" {
 		return
 	}
-	defer func() { _ = s.m.pg.SetSetting(flag, "true") }() // 无论成功与否只尝试一次
+	defer func() { _ = s.m.pg.SetSetting(flag, "true") }() // Try it once, whether you succeed or not.
 	a, err := s.m.pg.GetAgentByKey("mainagent")
 	if err != nil || a == nil {
-		return // 全新库尚未建 agent 行时,seedPrompts 会直接 seed 最新默认,无需此迁移
+		return // If the new library has not yet created an agent row, seedPrompts will use the latest seed default without this migration.
 	}
 	tmpl := agent.BuiltinPromptSeeds()["mainagent"]
 	if tmpl == "" {
 		return
 	}
-	// 全新库 seedPrompts 已 seed 最新默认 → 当前版本已等于代码默认,不必再追加重复版本。
+	// New library seedPrompts have been seed latest default → current version is now the code
+	// default, no need to add duplicate versions.
 	if cur, err := s.m.pg.CurrentPrompt(a.ID); err == nil && cur == tmpl {
 		return
 	}
@@ -623,27 +635,32 @@ func (s *Server) reseedMainAgentPrompt() {
 	log.Printf("[prompts] mainagent 提示词已追加新默认版本(加入目标达成后反问建目标,一次性)")
 }
 
-// reseedPlannerPrompt 把 planner 提示词刷成【当前代码默认】——默认正文做了精简重构,并把「克制」降级为
-// 仅去重、新增「深度优先于覆盖度」「硬底线:目标未达成且无在跑意图必须产出」、给否定结论复核加上界。
-// 每次默认有实质变更就 bump 下面的 flag(当前 v2)让存量旧库再刷一次。SeedPromptIfEmpty 首插入only,旧库已有版本收不到,故用版本管理
-// 【追加一个新版本】并切过去(ResetPromptToDefault),旧版本仍保留在历史里,用户若自定义过可从版本记录
-// 找回。settings flag 守卫 → 只做一次。全新库无需处理(SeedPromptIfEmpty 已 seed 最新默认)。与
-// reseedGoalsPrompt 完全同构。
+// reseedPlannerPrompt prints the planner prompt to [current code default] — the default body is
+// streamlined and rebuilt, and "restraint" is downgraded to "only repeat", and "depth priority over
+// coverage" and "hard bottom line: goal not achieved and no running intent must be output" are
+// added, and a bound is added to negative conclusion review. Each time there is a substantial
+// change in the default, the flag below bump (current v2) will reload the stock of the old library.
+// SeedPromptIfEmpty inserts only the first version, so the old library has already been reverted,
+// so use versioning to add a new version and cut it over (ResetPromptToDefault), the old version
+// remains in the history, and users can get back from the version log if they have customized it.
+// settings flag guard → do only once. No need to process the new library (SeedPromptIfEmpty is now
+// the seed latest default).
 func (s *Server) reseedPlannerPrompt() {
 	const flag = "planner_prompt_compact_realistic_v2"
 	if v, _, _ := s.m.pg.GetSetting(flag); v == "true" {
 		return
 	}
-	defer func() { _ = s.m.pg.SetSetting(flag, "true") }() // 无论成功与否只尝试一次
+	defer func() { _ = s.m.pg.SetSetting(flag, "true") }() // Try it once, whether you succeed or not.
 	a, err := s.m.pg.GetAgentByKey("planner")
 	if err != nil || a == nil {
-		return // 全新库尚未建 agent 行时,seedPrompts 会直接 seed 最新默认,无需此迁移
+		return // If the new library has not yet created an agent row, seedPrompts will use the latest seed default without this migration.
 	}
 	tmpl := agent.BuiltinPromptSeeds()["planner"]
 	if tmpl == "" {
 		return
 	}
-	// 全新库 seedPrompts 已 seed 最新默认 → 当前版本已等于代码默认,不必再追加重复版本。
+	// New library seedPrompts have been seed latest default → current version is now the code
+	// default, no need to add duplicate versions.
 	if cur, err := s.m.pg.CurrentPrompt(a.ID); err == nil && cur == tmpl {
 		return
 	}
@@ -654,26 +671,30 @@ func (s *Server) reseedPlannerPrompt() {
 	log.Printf("[prompts] planner 提示词已追加新默认版本(精简重构+克制降级去重+深度优先+否定复核上界,一次性)")
 }
 
-// reseedWorkerPrompt 把 worker 提示词刷成【当前代码默认】——默认正文 record_fact 段删掉了「否定类结论
-// 写观察+试探性读法」整句、并把 confidence(observed/inferred)与「是否穷尽本意图手段」解耦(这些易误导规划者),
-// 同时把 facts 数组分条收紧为「彼此完全独立、无法归并」的极少数例外。bump flag 至 v3 让存量旧库再刷一次。
-// SeedPromptIfEmpty 首插入only,旧库已有版本收不到,故用版本管理【追加一个新版本】并切过去,旧版本仍保留在历史里可找回。
-// settings flag 守卫 → 只做一次。全新库无需处理。与 reseedGoalsPrompt 完全同构。
+// reseedWorkerPrompt prints the worker prompt as [current code default] — the default record_fact
+// paragraph removes the whole sentence "negative class conclusion write observation + tempting
+// reading", and decouples confidence (observed/inferred) from "whether exhausting means of intent"
+// (which can mislead planners), while tightening facts arrays to a very few exceptions that are
+// "completely independent of each other and cannot be merged". bump flag to v3 Reprints the stock
+// of the old library. SeedPromptIfEmpty insert only, the old library has already been reverted, so
+// use versioning [add a new version] and cut over, the old version is still in the history.
+// settings flag guard → Do it once. No handling needed. Fully identical to reseedGoalsPrompt.
 func (s *Server) reseedWorkerPrompt() {
 	const flag = "worker_prompt_compact_v4"
 	if v, _, _ := s.m.pg.GetSetting(flag); v == "true" {
 		return
 	}
-	defer func() { _ = s.m.pg.SetSetting(flag, "true") }() // 无论成功与否只尝试一次
+	defer func() { _ = s.m.pg.SetSetting(flag, "true") }() // Try it once, whether you succeed or not.
 	a, err := s.m.pg.GetAgentByKey("worker")
 	if err != nil || a == nil {
-		return // 全新库尚未建 agent 行时,seedPrompts 会直接 seed 最新默认,无需此迁移
+		return // If the new library has not yet created an agent row, seedPrompts will use the latest seed default without this migration.
 	}
 	tmpl := agent.BuiltinPromptSeeds()["worker"]
 	if tmpl == "" {
 		return
 	}
-	// 全新库 seedPrompts 已 seed 最新默认 → 当前版本已等于代码默认,不必再追加重复版本。
+	// New library seedPrompts have been seed latest default → current version is now the code
+	// default, no need to add duplicate versions.
 	if cur, err := s.m.pg.CurrentPrompt(a.ID); err == nil && cur == tmpl {
 		return
 	}
@@ -684,32 +705,35 @@ func (s *Server) reseedWorkerPrompt() {
 	log.Printf("[prompts] worker 提示词已追加新默认版本(查上下文段收敛为 list_assets/list_findings,去掉 list_facts/node_detail/asset_neighbors,一次性)")
 }
 
-// reporterToolCallMessage 必须无条件要求先读一次 get_finding_traffic 再写报告。
-// 该工具是只读的、「不依赖捕获开关」,自动绑定关不关都能读到人工绑定的证据。若这里
-// 写成「启用自动绑定才读」,默认关闭配置下 reporter 就不会传 evidence_version,
-// SetFindingReportVersionByNodeID 便按 legacy 语义写 -1,漏洞详情与 Markdown 导出
-// 从此常驻「证据已变更，报告待更新」,而 UI 上没有任何入口能把它清掉。
+// The report must be written without the reporterToolCallMessage being asked to read
+// get_finding_traffic first. The tool is read-only, "not dependent on the capture switch", and can
+// read manually bound evidence whether or not the automatic binding is turned on. If you write here
+// "Enable auto-binding only for reading", then by default with the reporter off, no
+// evidence_version is passed, SetFindingReportVersionByNodeID is written as legacy semantics -1,
+// and the vulnerability details are exported with Markdown.
 const reporterToolCallMessage = "上面刚有一个漏洞被 report_finding 登记。请读取返回 JSON 的 finding_id（独立漏洞记录 ID）与 finding_node_id（探索节点 ID），" +
 	"先用 get_finding_traffic(finding_id) 读取当前证据清单及其 version（空清单是正常情况，照常写报告）；" +
 	"若运行指引启用自动绑定，在读取前先核实并关联本次漏洞的流量。节点详情使用 finding_node_id。" +
 	"最后调用 update_finding_report(finding_id=finding_node_id, report, evidence_version=实际读取版本) 保存，" +
 	"evidence_version 必须传，否则报告会被永久标记为待更新。不要混用两种编号。"
 
-// 旧版触发消息(0.3.8 及更早)。只有仍与它逐字相同的记录才会被迁移覆盖，用户改过的保持原样。
+// The old version triggered messages (0.3.8 and earlier). Only records that remain exactly the same
+// as it is will be migrated, and changes made by users will remain unchanged.
 const reporterToolCallMessageV1 = "上面刚有一个漏洞被 report_finding 登记。请从触发上下文里取出 finding_id" +
 	"（工具返回 \"finding recorded: <id>\" 里的数字）与任务 id，按你的职责撰写该漏洞的详细报告，" +
 	"最后调用 update_finding_report(finding_id, report) 保存。"
 
-// upgradeReporterTriggerMessage 把老库里仍是默认文案的 reporter 触发消息刷成新版本。
-// seedReporterAgent 受 reporter_agent_seed_v1 守卫且只在新建 agent 时写触发器，所以
-// 升级上来的库拿不到新文案 —— 工具 schema 由 seedFindingTrafficTools 补齐了
-// evidence_version，但没有任何东西告诉 reporter 去用它。一次性，且只覆盖未被改动的文案。
+// upgradeReporterTriggerMessage Refreshes the reporter trigger message that is still the default
+// text in the old library to a new version. seedReporterAgent is guarded by reporter_agent_seed_v1
+// and writes the trigger only when a new agent is created, so the upgraded library does not get the
+// new text — tool schema The evidence_version is filled by seedFindingTrafficTools, but there is
+// nothing else to tell the reporter to use it.
 func (s *Server) upgradeReporterTriggerMessage() {
 	const flag = "reporter_trigger_evidence_version_v1"
 	if v, _, _ := s.m.pg.GetSetting(flag); v == "true" {
 		return
 	}
-	defer func() { _ = s.m.pg.SetSetting(flag, "true") }() // 只尝试一次
+	defer func() { _ = s.m.pg.SetSetting(flag, "true") }() // Try it once.
 	triggers, err := s.m.pg.ListTriggersFor("reporter")
 	if err != nil {
 		log.Printf("[reporter] 读取触发器失败: %v", err)
@@ -717,7 +741,7 @@ func (s *Server) upgradeReporterTriggerMessage() {
 	}
 	for _, t := range triggers {
 		if !t.OnToolCall || t.ToolCallMessage != reporterToolCallMessageV1 {
-			continue // 用户改过或不是 finding 触发器，不动。
+			continue // The user changes or does not find the trigger, and it remains unchanged.
 		}
 		t.ToolCallMessage = reporterToolCallMessage
 		if err := s.m.pg.UpdateTrigger(t); err != nil {
@@ -728,19 +752,21 @@ func (s *Server) upgradeReporterTriggerMessage() {
 	}
 }
 
-// seedReporterAgent 预置一个「报告撰写」自定义 agent(builtin=false，可在 UI 编辑/删除)：
-// 绑定 update_finding_report + 任务查询工具，并挂一个「report_finding 被调用即触发」的
-// 触发器 —— 每登记一个漏洞就唤起它写详细报告。一次性(settings flag 守卫)：用户删掉后不再重建。
-// 依赖：orchestration 工具已在本函数上方 SeedTool 入库，故绑定得上。
+// seedReporterAgent Presets a custom agent for report writing (builtin=false, can be edited/deleted
+// in the UI): binds update_finding_report + task query tool and attaches a trigger called
+// "report_finding is triggered when called" - it is called to write a detailed report every time a
+// vulnerability is registered. one-time (settings flag guard): the user deletes it and does not
+// rebuild it. dependencies: the orchestration tool is already in the SeedTool library above this
+// function, so it can be bound.
 func (s *Server) seedReporterAgent() {
 	const flag = "reporter_agent_seed_v1"
 	if v, _, _ := s.m.pg.GetSetting(flag); v == "true" {
 		return
 	}
-	defer func() { _ = s.m.pg.SetSetting(flag, "true") }() // 无论成功与否只尝试一次
+	defer func() { _ = s.m.pg.SetSetting(flag, "true") }() // Try it once, whether you succeed or not.
 
 	if exist, _ := s.m.pg.GetAgentByKey("reporter"); exist != nil {
-		return // key 已被占用(用户手建过)——不覆盖
+		return // key is occupied (built by the user) - not overridden
 	}
 	a, err := s.m.pg.CreateAgent("reporter", "报告撰写",
 		"漏洞详细报告撰写：发现漏洞时自动触发，查取证据与执行过程后写 Markdown 报告并回写。")
@@ -751,13 +777,15 @@ func (s *Server) seedReporterAgent() {
 	if err := s.m.pg.SeedPromptIfEmpty(a.ID, agent.ReporterDefaultPrompt); err != nil {
 		log.Printf("[reporter] seed prompt 失败: %v", err)
 	}
-	// 触发运行策略：parallel + none —— 一漏洞一报告、多个 finding 并发各写各的。
-	// merge 必须为 none：否则(默认 all)一波 finding 会被合并成一次运行，并行就没意义。
-	// maxParallel=5：同时最多 5 个报告会话，避免瞬时太多 LLM 调用。
+	// Trigger run policies: parallel + none - a vulnerability report, multiple findings written
+	// simultaneously. merge must be none: otherwise (by default all) a wave of findings will be
+	// merged into one run, and parallelization is meaningless. maxParallel=5: up to 5 report
+	// sessions at the same time, to avoid too many LLM calls in a single run.
 	if err := s.m.pg.SetAgentTriggerBehavior("reporter", "parallel", "none", 5); err != nil {
 		log.Printf("[reporter] 设置触发运行策略失败: %v", err)
 	}
-	// 绑定它需要的工具：写报告 + 读证据/执行过程/态势。
+	// The tools it requires to bind: writing report + reading evidence/implementation
+	// process/attitude.
 	if err := s.m.pg.AddAgentToToolBinding("reporter", []string{
 		"update_finding_report", "get_task_node_detail", "list_task_findings",
 		"get_task_worker_trace", "list_task_worker_traces", "search_task_worker_traces",
@@ -765,8 +793,8 @@ func (s *Server) seedReporterAgent() {
 	}); err != nil {
 		log.Printf("[reporter] 绑定工具失败: %v", err)
 	}
-	// 触发器：report_finding 被调用即触发（工具返回 "finding recorded: <id>" 带上 finding_id，
-	// 任务 id 也在触发消息里）。
+	// Triggers: report_finding is triggered when called (the tool returns "finding recorded: <id>"
+	// with finding_id, the task id is also in the trigger message).
 	if _, err := s.m.pg.CreateTrigger(&db.AgentTrigger{
 		AgentKey:        "reporter",
 		Enabled:         true,
@@ -833,7 +861,7 @@ func (s *Server) seedPlannerListAssetsBinding() {
 // PlannerTools() and lack worker via WorkerTools(); this only backfills old rows.
 // One-shot + flag-guarded so a user who later re-binds worker isn't overridden.
 func (s *Server) seedCompanyScopeRebind() {
-	const flag = "company_scope_rebind_v1" // worker→planner 默认绑定切换
+	const flag = "company_scope_rebind_v1" // Worker → Planner default binding switch
 	if v, _, _ := s.m.pg.GetSetting(flag); v == "true" {
 		return
 	}
@@ -870,7 +898,7 @@ func (s *Server) seedWorkerReadToolsUnbind() {
 	} {
 		if err := s.m.pg.RemoveAgentFromTool("worker", k); err != nil {
 			log.Printf("[worker] %s 从 worker 解绑失败: %v", k, err)
-			return // 出错则不落 flag，下次启动重试
+			return // If the error is not flagged, retry next time.
 		}
 	}
 	_ = s.m.pg.SetSetting(flag, "true")
@@ -883,7 +911,7 @@ func (s *Server) seedWorkerReadToolsUnbind() {
 // Fresh DBs already have them via WorkerTools() and this is a harmless no-op there.
 // One-shot + flag-guarded so a user who later deliberately unbinds them isn't overridden.
 func (s *Server) seedWorkerReadbackRebind() {
-	const flag = "worker_readback_rebind_v2" // v2: 追加 node_detail
+	const flag = "worker_readback_rebind_v2" // v2: Add node_detail
 	if v, _, _ := s.m.pg.GetSetting(flag); v == "true" {
 		return
 	}
@@ -891,7 +919,7 @@ func (s *Server) seedWorkerReadbackRebind() {
 		"search_all_worker_traces", "get_worker_trace", "node_detail",
 	}); err != nil {
 		log.Printf("[worker] 回看/详情工具补绑失败: %v", err)
-		return // 出错则不落 flag，下次启动重试
+		return // If the error is not flagged, retry next time.
 	}
 	_ = s.m.pg.SetSetting(flag, "true")
 }
@@ -901,7 +929,7 @@ func (s *Server) seedWorkerReadbackRebind() {
 // before Auto existed still give Auto its default toolset — without re-adding it
 // after a user deliberately unbinds.
 func (s *Server) seedAutoDefaultBindings() {
-	const flag = "auto_default_bindings_v3" // v3: 替换旧资产工具名，加入 insert_assets/add_company_scope
+	const flag = "auto_default_bindings_v3" // v3: replace old asset tool name with insert_assets/add_company_scope
 	if v, _, _ := s.m.pg.GetSetting(flag); v == "true" {
 		return
 	}
@@ -910,7 +938,7 @@ func (s *Server) seedAutoDefaultBindings() {
 		keys = append(keys, t.Name())
 	}
 	keys = append(keys, platformToolKeys...)
-	// 资产工具：Auto 操作平台常要看/登记资产、管理公司范围。
+	// Asset tools: Auto operating platform frequently see / register assets, manage company scope.
 	keys = append(keys, "insert_assets", "add_company_scope", "list_assets")
 	if err := s.m.pg.AddAgentToToolBinding("auto", keys); err != nil {
 		log.Printf("[auto] 默认绑定失败: %v", err)

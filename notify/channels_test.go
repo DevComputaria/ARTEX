@@ -14,8 +14,9 @@ import (
 	"unicode/utf8"
 )
 
-// singleMsg 构造一条带引号与换行的单发消息。刻意用含 `"` 与 `\n` 的标题/摘要：
-// 这正是模板插值最容易产出的非法 JSON 的输入。
+// singleMsg constructs a single message with quotation marks and a new line. Intentionally use
+// headers/abstracts containing `"` and `\n`: This is the most common input for unauthorized JSON
+// output by template insertions.
 func singleMsg() Message {
 	return Message{
 		Items: []Item{{
@@ -30,7 +31,7 @@ func singleMsg() Message {
 	}
 }
 
-// batchMsg 构造一批汇总消息。
+// batchMsg builds a batch of summary messages.
 func batchMsg(n int) Message {
 	m := Message{Batch: true, WindowMinutes: 30, HomeURL: "https://artex.local/function/findings"}
 	for i := 0; i < n; i++ {
@@ -46,7 +47,8 @@ func batchMsg(n int) Message {
 	return m
 }
 
-// capturePost 起一个假接收端，把收到的请求体与头回传给断言函数。
+// capturePost sets up a fake receiver, which returns the received request body and header to the
+// assertion function.
 func capturePost(t *testing.T, respBody string, assert func(t *testing.T, body map[string]any, r *http.Request)) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -97,8 +99,9 @@ func TestDingTalkFallsBackToMarkdownForBatch(t *testing.T) {
 	}
 }
 
-// TestDingTalkBusinessErrorIsPermanent 锁住「HTTP 200 但 errcode 非 0」的判定。
-// 不检查 errcode 会把投递失败记成成功——这是各家国内 IM 平台共有的坑。
+// TestDingTalkBusinessErrorIsPermanent Locks the determination of "HTTP 200 but errcode not 0". Not
+// checking for errcode will count a delivery failure as a success — a common mistake among domestic
+// IM platforms.
 func TestDingTalkBusinessErrorIsPermanent(t *testing.T) {
 	srv := capturePost(t, `{"errcode":310000,"errmsg":"keywords not in content"}`, nil)
 	_, err := (dingTalkChannel{}).Send(context.Background(), map[string]any{"webhook": srv.URL}, singleMsg())
@@ -123,7 +126,7 @@ func TestWeComTruncatesCJKWithinByteLimit(t *testing.T) {
 			t.Fatal("截断后不是合法 UTF-8——企微会整条拒收")
 		}
 	})
-	// 造一批足够长的中文汇总，必然超过 4096 字节。
+	// Make a long enough Chinese summary, which must be longer than 4096 bytes.
 	m := batchMsg(200)
 	if _, err := (weComChannel{}).Send(context.Background(), map[string]any{"webhook": srv.URL}, m); err != nil {
 		t.Fatalf("投递失败: %v", err)
@@ -161,11 +164,13 @@ func TestFeishuCardStructureAndSign(t *testing.T) {
 		if header["template"] != "orange" {
 			t.Errorf("high 级别应为 orange 配色，得到 %v", header["template"])
 		}
-		// 配了 secret 就必须带加签参数，否则飞书会以 19021 拒收。
+		// If you specify secret, you must have the option to sign it, otherwise Feishu will reject
+		// it with 19021.
 		if body["sign"] == nil || body["timestamp"] == nil {
 			t.Fatalf("缺少加签参数: %v", body)
 		}
-		// 卡片元素里应包含一个按钮，其 url 指向漏洞详情。
+		// The card element should contain a button with a url pointing to the details of the
+		// vulnerability.
 		elements, _ := card["elements"].([]any)
 		foundButton := false
 		for _, e := range elements {
@@ -212,7 +217,7 @@ func TestTelegramEscapesHTMLInUntrustedContent(t *testing.T) {
 	})
 	m := Message{Items: []Item{{
 		Severity: "high",
-		// 标题与摘要来自被测目标/模型输出，是不可信内容。
+		// The title and the abstract are from the target/model output and are not credible.
 		Name:    `<script>alert(1)</script>`,
 		Summary: "a & b < c",
 	}}}
@@ -248,8 +253,9 @@ func TestTelegramErrorClassification(t *testing.T) {
 }
 
 func TestWebhookDefaultTemplateProducesValidJSON(t *testing.T) {
-	// 这条是默认模板存在的意义：标题里带引号与换行时，任何朴素的
-	// `"title": "{{.Title}}"` 写法都会产出非法 JSON。{{json .}} 才不会。
+	// This line is the meaning of the default template: any plain `"title": "{{.Title}}"` notation
+	// with quotation marks and a new line in the title will produce an invalid JSON. {{json.}} will
+	// not.
 	srv := capturePost(t, `{"ok":true}`, func(t *testing.T, body map[string]any, _ *http.Request) {
 		if body["title"] != `[🟠 高危] 登录处 "SQL注入" 风险` {
 			t.Errorf("标题未正确还原: %v", body["title"])
@@ -262,7 +268,8 @@ func TestWebhookDefaultTemplateProducesValidJSON(t *testing.T) {
 		if it["summary"] != "参数 id\n未过滤 导致注入" {
 			t.Errorf("摘要未正确还原: %v", it["summary"])
 		}
-		// 数值必须是 JSON 数字而不是字符串（json:"...,string" 之类的写法会踩这坑）。
+		// The value must be a JSON number rather than a string (notations like json:...,string"
+		// will run into this problem).
 		if _, ok := it["finding_id"].(float64); !ok {
 			t.Errorf("finding_id 应为数字，得到 %T", it["finding_id"])
 		}
@@ -327,7 +334,8 @@ func TestEmailMessageIsWellFormed(t *testing.T) {
 	if !strings.Contains(msg, "To: a@example.com, b@example.com\r\n") {
 		t.Fatalf("To 头有误:\n%s", msg)
 	}
-	// 中文主题必须 RFC 2047 编码，否则客户端显示成乱码。
+	// Non-ASCII subjects must use RFC 2047 encoding, otherwise the client may display mojibake.
+	// code.
 	if !strings.Contains(msg, "Subject: =?utf-8?") {
 		t.Fatalf("主题未做 RFC 2047 编码:\n%s", msg)
 	}
@@ -337,7 +345,7 @@ func TestEmailMessageIsWellFormed(t *testing.T) {
 		t.Fatalf("主题解码后内容有误: %q", dec)
 	}
 
-	// 正文是 base64，解出来应是合法 HTML。
+	// The text is base64, and the result should be valid HTML.
 	parts := strings.SplitN(msg, "\r\n\r\n", 2)
 	if len(parts) != 2 {
 		t.Fatal("邮件缺少头/体分隔")
@@ -350,17 +358,18 @@ func TestEmailMessageIsWellFormed(t *testing.T) {
 	if !strings.HasPrefix(html, "<div") {
 		t.Fatalf("正文不是 HTML: %.80s", html)
 	}
-	// 标题原样出现在文本位置：HTML 文本内容里的双引号是合法字符，无需转义。
-	// 这里断言「原样保留」是为了防止将来有人误加一层引号转义，让中文引号
-	// 显示成 &quot;。
+	// The title appears as it is in the text: Double quotes in HTML text content are valid
+	// characters and do not need to be translated. &quot; Retained as is &quot; is asserted here to
+	// prevent future mistaken translations of the quotation marks, which would make the Chinese
+	// quotation mark appear as &quot;.
 	if !strings.Contains(html, `"SQL注入"`) {
 		t.Fatalf("标题中的引号在文本位置应原样保留: %.200s", html)
 	}
 }
 
-// TestEmailEscapesStructuralInjection 覆盖邮件正文真正需要防的注入：
-// 漏洞标题与摘要来自被测目标与模型输出，是不可信内容。文本位置必须转义
-// & < >（否则可以注入标签），属性位置还必须转义引号（否则可以闭合 href）。
+// TestEmailEscapesStructuralInjection Overrides the injection that is really needed to prevent the
+// message body: The vulnerability header and summary are from the target and model output, and are
+// unreliable content.
 func TestEmailEscapesStructuralInjection(t *testing.T) {
 	m := Message{
 		Items: []Item{{
@@ -380,8 +389,10 @@ func TestEmailEscapesStructuralInjection(t *testing.T) {
 	if !strings.Contains(html, "a &amp; b &gt; c") {
 		t.Fatalf("& 与 > 未转义: %s", html)
 	}
-	// 回链是管理员可配的 public_base_url，本身可信度较高，但属性位置仍必须
-	// 转义引号——否则一个带引号的地址会闭合 href 并注入事件处理器。
+	// The backchain is the public_base_url that can be assigned by the administrator, which is more
+	// reliable in itself, but the location of the attribute must still be in a transliterated
+	// quotation mark—otherwise a quotation marked address will be enclosed by href and injected
+	// into the event handler.
 	if strings.Contains(html, `onmouseover=alert(1)">`) {
 		t.Fatalf("href 属性未正确转义: %s", html)
 	}
@@ -402,7 +413,8 @@ func mustExtractHeader(t *testing.T, msg, name string) string {
 }
 
 func TestChannelValidateReportsMissingFields(t *testing.T) {
-	// 校验错误会直接展示给配置者，必须说清楚缺什么，而不是泛泛的「配置无效」。
+	// The validation errors are displayed directly to the configurator, who must say what is
+	// missing, rather than a generic "configuration invalid".
 	cases := []struct {
 		kind   string
 		cfg    map[string]any
@@ -433,9 +445,9 @@ func TestChannelValidateReportsMissingFields(t *testing.T) {
 	}
 }
 
-// TestEmailSMTPErrorClassification 锁住 SMTP 4xx/5xx 的语义区分。
-// 若把 4xx 也判成永久失败，一个启用灰名单的邮件服务器会让每条推送都在第一次
-// 尝试后落入 failed —— 而灰名单恰恰是自动重试最该发挥作用的场景。
+// TestEmailSMTPErrorClassification locks the semantic distinction between SMTP 4xx/5xx. If 4xx is
+// also permanently failed, a mail server that enables graylisting will fail every push on the first
+// attempt — and graylisting is exactly where automatic retry should work best.
 func TestEmailSMTPErrorClassification(t *testing.T) {
 	cases := []struct {
 		reply     string
@@ -447,8 +459,8 @@ func TestEmailSMTPErrorClassification(t *testing.T) {
 		{"550 5.1.1 User unknown", true},
 		{"553 5.1.3 Bad address syntax", true},
 		{"554 5.7.1 Relay access denied", true},
-		// 取不到应答码时按「可重试」处理：宁可多试一次，也不要把可能的瞬时
-		// 故障判死。
+		// If you cannot get the answer code, treat it as "retryable": try more than once rather
+		// than condemn a possible instantaneous failure.
 		{"unexpected EOF", false},
 		{"", false},
 	}
@@ -457,7 +469,7 @@ func TestEmailSMTPErrorClassification(t *testing.T) {
 		if got := IsPermanent(err); got != tc.permanent {
 			t.Errorf("应答 %q: 期望 permanent=%v 得到 %v", tc.reply, tc.permanent, got)
 		}
-		// 无论怎么分类，原文都要保留给使用者排查。
+		// Regardless of the classification, the original text is kept for user check.
 		if tc.reply != "" && !strings.Contains(err.Error(), tc.reply) {
 			t.Errorf("应答 %q 的原文被丢弃: %v", tc.reply, err)
 		}
@@ -465,7 +477,7 @@ func TestEmailSMTPErrorClassification(t *testing.T) {
 }
 
 func TestRegistryCoversAllKinds(t *testing.T) {
-	// 六个渠道缺一不可——少一个会在 UI 下拉里静默消失。
+	// Six channels are essential – one missing will disappear silently down the UI.
 	want := []string{KindDingTalk, KindEmail, KindFeishu, KindTelegram, KindWebhook, KindWeCom}
 	got := Kinds()
 	if len(got) != len(want) {

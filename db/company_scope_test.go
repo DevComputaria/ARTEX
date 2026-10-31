@@ -60,8 +60,9 @@ func TestParseAutoScopeLine(t *testing.T) {
 		{name: "icp chinese", input: "沪网备案 9988", kind: "icp", normalized: "沪网备案9988"},
 		{name: "icp domain", input: "icp.example.com", kind: "domain", normalized: "icp.example.com"},
 		{name: "icp url query", input: "https://example.com/path?icp=1", kind: "domain", normalized: "example.com"},
-		// 备案号不含点号：掺了域名/版本号的描述性文字归关键词，否则会存成一条
-		// 永远匹配不上的死 ICP 规则。
+		// The file number does not contain a period: the descriptive text with the domain
+		// name/version number is mixed into the keyword, otherwise it will be stored as a dead ICP
+		// rule that will never match.
 		{name: "icp with domain text", input: "备案 www.example.com", kind: "keyword", normalized: "备案 www.example.com"},
 		{name: "icp with version text", input: "某公司 ICP v1.0", kind: "keyword", normalized: "某公司 icp v1.0"},
 		{name: "icp fullwidth dot", input: "备案 例．com", kind: "keyword", normalized: "备案 例．com"},
@@ -233,14 +234,15 @@ func TestCompanyICPAttribution(t *testing.T) {
 	if err != nil {
 		t.Skipf("postgres unavailable (%v) — skipping", err)
 	}
-	// 关连接必须走 t.Cleanup 且**注册在清理之前**：t.Cleanup 是后进先出，
-	// 先注册关闭 → 关闭最后执行，下面的数据清理才连得上库。
-	// 原先这里是 `defer d.Close()`：defer 在函数返回时先跑，t.Cleanup 在那之后
-	// 才执行，于是清理语句全落在**已关闭的连接**上、错误又被 `_, _ =` 丢弃，
-	// 资产与公司就永久残留在库里。残留本身不会立刻报错，但本用例用
-	// `MAX(companies.id)+1` 当假 TaskID 给资产打标（见下方 suffix），
-	// 一旦这个数字与别的用例的任务 id 撞上，那个用例按「恰好 N 个资产」的断言
-	// 就会莫名失败——排查成本极高。
+	// The closing connection must go through t.Cleanup and **registry before it is cleaned**:
+	// t.Cleanup is backward-bound, register close → close and then execute, the next data cleanup
+	// will be connected to the vault. Originally here was `defer d.Close()`: defer runs when the
+	// function returns first, t.Cleanup executes after that, so the cleanup statement falls on the
+	// **closed connection**, the error is discarded by `_, _ =`, and the asset and company are
+	// permanently left in the vault. The remaining itself does not immediately fail, but this use
+	// case flags the asset with `MAX(companies.id)+1` if the TaskID is false (see suffix below),
+	// and once this number collides with the task id of another use case, that use case fails
+	// because of the claim "exactly N assets" — a costly sort-out.
 	t.Cleanup(func() { d.Close() })
 
 	var suffix int64
@@ -254,7 +256,8 @@ func TestCompanyICPAttribution(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		// 不吞错误：清理失败会污染后续用例，必须让它在本次运行里显形。
+		// Error tolerance: Cleanup failures contaminate subsequent use cases and must be made
+		// visible in the current run.
 		if _, err := d.Exec(`DELETE FROM assets WHERE task_ids @> ARRAY[$1]::bigint[]`, suffix); err != nil {
 			t.Errorf("清理测试资产失败: %v", err)
 		}

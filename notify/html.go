@@ -5,11 +5,13 @@ import (
 	"strings"
 )
 
-// 本文件渲染邮件的 HTML 正文。刻意用内联样式 + 简单表格布局而不是现代 CSS：
-// 邮件客户端（尤其 Outlook 与国内企业邮箱）对 <style> 块和 flex/grid 的支持
-// 差异极大，内联样式是唯一在各家都能正确显示的写法。
+// This file renders the HTML body of the email. Intentionally inline style + simple table layout
+// rather than modern CSS: Mail clients (especially Outlook and domestic enterprise mailboxes)
+// support <style> blocks and flex/grid, but inline style is the only way to display it correctly
+// across all clients.
 
-// htmlSeverityColor 返回级别对应的强调色，用于左侧色条与标题。
+// htmlSeverityColor Returns the intensity color corresponding to the severity level, used for the
+// left-hand bar and header.
 func htmlSeverityColor(severity string) string {
 	switch severity {
 	case "critical":
@@ -25,12 +27,12 @@ func htmlSeverityColor(severity string) string {
 	}
 }
 
-// htmlTitle 返回邮件主题。
+// htmlTitle Returns the subject of the message.
 func htmlTitle(m Message) string {
 	return markdownTitle(m)
 }
 
-// htmlBody 渲染邮件正文 HTML。maxRunes<=0 表示不截断。
+// htmlBody Renders the HTML of the message body. maxRunes<=0 means no truncation.
 func htmlBody(m Message, maxRunes int) string {
 	var b strings.Builder
 	b.WriteString(`<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;font-size:14px;color:#262626;line-height:1.6;">`)
@@ -49,7 +51,8 @@ func htmlBody(m Message, maxRunes int) string {
 	return TruncateHTML(b.String(), maxRunes)
 }
 
-// htmlBatchIntro 渲染汇总邮件开头：条数与级别分布。
+// htmlBatchIntro Renders the beginning of a summary message: number of lines and level
+// distribution.
 func htmlBatchIntro(m Message) string {
 	var b strings.Builder
 	if m.WindowMinutes > 0 {
@@ -74,8 +77,8 @@ func htmlBatchIntro(m Message) string {
 	return b.String()
 }
 
-// htmlItem 渲染单个漏洞。full=true 时含摘要与回链（单条推送），
-// false 时压缩成一行（汇总列表）。
+// htmlItem renders a single vulnerability. full=true contains the summary and back-chain
+// (single-string push), false compresses it into one line (summary list).
 func htmlItem(it Item, full bool) string {
 	color := htmlSeverityColor(it.Severity)
 	var b strings.Builder
@@ -122,8 +125,9 @@ func htmlItem(it Item, full bool) string {
 	return b.String()
 }
 
-// htmlEscape 转义 HTML 文本内容。漏洞标题与摘要来自被测目标与模型输出，
-// 是不可信内容——不转义就等于允许把任意 HTML（含外链图片）注入到邮件里。
+// The vulnerability headers and abstracts are from the target and model output, and are unreliable
+// content — not translating is equivalent to allowing arbitrary HTML (including extraneous images)
+// to be injected into the message.
 func htmlEscape(s string) string {
 	s = strings.ReplaceAll(s, "&", "&amp;")
 	s = strings.ReplaceAll(s, "<", "&lt;")
@@ -131,8 +135,8 @@ func htmlEscape(s string) string {
 	return s
 }
 
-// htmlEscapeAttr 转义 HTML 属性值（在文本转义之外额外处理引号，
-// 防止 URL 里的引号提前闭合 href 属性）。
+// htmlEscapeAttr Transposes the HTML attribute value (extra handling of quotes in addition to text
+// escape, preventing quotes in URLs from pre-closing the href attribute).
 func htmlEscapeAttr(s string) string {
 	s = htmlEscape(s)
 	s = strings.ReplaceAll(s, "\"", "&quot;")

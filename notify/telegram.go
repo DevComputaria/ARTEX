@@ -9,27 +9,31 @@ import (
 	"strings"
 )
 
-// telegramTextLimit 是 Telegram sendMessage 的 text 字段上限（字符数）。
+// telegramTextLimit is the upper limit (number of characters) for the text field of Telegram
+// sendMessage.
 const telegramTextLimit = 4096
 
-// telegramChannel 实现 Telegram Bot API。
+// telegramChannel implements the Telegram Bot API.
 //
-// 平台特性：
-//   - 鉴权全部在 URL path 里（/bot<token>/sendMessage），无需加签。
-//   - 用 HTML 解析模式而不是 MarkdownV2：MarkdownV2 要求转义 `_*[]()~`>#+-=|{}.!`
-//     共 18 个字符，漏一个就整条消息被拒；HTML 只需转义 & < > 三个。
-//   - 业务错误同样藏在 HTTP 200 里，靠 ok 字段判断。
+// Features of the platform:
+// - The token is all in the URL path (/bot<token>/sendMessage), no signature required.
+// - Use HTML parsing mode instead of MarkdownV2: MarkdownV2 requires a translation of
+// `_*[]()~`>#+-=|{}.!`, which is 18 characters long, and if one is omitted the entire message is
+// rejected; HTML requires only a translation of & < > three.
+// - The operation error is also hidden in HTTP 200, and is judged by the ok field.
 type telegramChannel struct{}
 
 func (telegramChannel) Kind() string { return KindTelegram }
 
-// Telegram 单聊约 1 条/秒、群组 20 条/分钟。取保守值。
+// Telegram single chats about 1 message/second, group chats 20 messages/minute.
 func (telegramChannel) DefaultRatePerMin() int { return 20 }
 
-// Bot Token 是完整凭据；chat_id 只是收件人，不算秘密（拿到它没有 Token 也发不了消息）。
+// The Bot Token is the complete credential; chat_id is just the recipient, not secret (no Token can
+// be obtained from it, nor can a message be sent).
 func (telegramChannel) SecretKeys() []string { return []string{"bot_token"} }
 
-// base_url 决定 Token 被发往哪个 API 端点（如自建反代），改它必须重新表态 Token。
+// The base_url determines which API endpoint the Token is sent to (for example, a custom-built
+// backend), and changing it requires re-statement of the Token.
 func (telegramChannel) DestinationKeys() []string { return []string{"base_url"} }
 
 func (telegramChannel) Validate(cfg map[string]any) error {
@@ -77,16 +81,17 @@ func (c telegramChannel) Send(ctx context.Context, cfg map[string]any, m Message
 	if res.OK {
 		return kept, nil
 	}
-	// 429 是限流，退避后重试有效；其余（400 参数错、401 token 错、403 被拉黑、
-	// 404 chat 不存在）都是配置问题，重试不会自愈。
+	// 429 is a limiter, and retry after avoidance is valid; the rest (400 parameter error, 401
+	// token error, 403 blacked out, 404 chat does not exist) are configuration issues that will not
+	// heal themselves.
 	if res.ErrorCode == 429 {
 		return 0, fmt.Errorf("Telegram 限流: %s", res.Description)
 	}
 	return 0, Permanent(fmt.Errorf("Telegram 返回错误 %d: %s", res.ErrorCode, res.Description))
 }
 
-// telegramEndpoint 拼出 sendMessage 地址。base_url 留空时用官方 API，
-// 非空时用于自建 Bot API 反代（国内网络下的常见需求）。
+// telegramEndpoint Compile the sendMessage address. Base_url is used for the official API if left
+// empty, and for custom Bot API generation (a common need in domestic networks) if not empty.
 func telegramEndpoint(cfg map[string]any) (string, error) {
 	base := cfgString(cfg, "base_url")
 	if base == "" {
@@ -97,18 +102,21 @@ func telegramEndpoint(cfg map[string]any) (string, error) {
 	raw := base + "/bot" + token + "/sendMessage"
 	u, err := url.Parse(raw)
 	if err != nil {
-		// 不透传 err：地址里含 Bot Token，且此时连 addr 都不该回显。
+		// Not transmitted err: The address contains a Bot Token, and even the addr should not be
+		// returned at this time.
 		return "", fmt.Errorf("拼接 API 地址失败（API 地址：%s）", redactRequestTarget(base))
 	}
 	return u.String(), nil
 }
 
-// telegramHTML 渲染 HTML 正文，返回正文与实际写入的条目数（见 Channel.Send）。
+// telegramHTML Renders HTML body, returning the body and the number of entries actually written
+// (see Channel.Send).
 func telegramHTML(m Message) (string, int) {
 	var b strings.Builder
 	b.WriteString("<b>" + telegramEscape(markdownTitle(m)) + "</b>\n")
 	if m.Batch {
-		// Telegram 的上限是**字符数**，所以打包也按字符计量（runeSize）。
+		// Telegram has a maximum of **characters**, so packing is also measured by characters
+		// (runeSize).
 		footer := ""
 		if m.HomeURL != "" {
 			footer = fmt.Sprintf("\n\n<a href=\"%s\">在平台中查看全部</a>", telegramEscapeAttr(m.HomeURL))
@@ -148,10 +156,11 @@ func telegramHTML(m Message) (string, int) {
 	return TruncateHTML(b.String(), telegramTextLimit), 1
 }
 
-// telegramReservedRunes 预留给消息标题与可能出现的截断提示（按字符计）。
+// telegramReservedRunes Reserved for the message header and any truncation hints that may appear
+// (in characters).
 const telegramReservedRunes = 160
 
-// telegramBatchLine 渲染汇总里的一条（未转义，由调用方统一转义）。
+// telegramBatchLine A line in the render summary (not translated, unified by the caller).
 func telegramBatchLine(it Item, idx int) string {
 	if a := assetLine(it.Assets, maxAssetsShown); a != "" {
 		return fmt.Sprintf("%d. %s · %s — %s", idx, SeverityLabel(it.Severity), it.Title(), a)
@@ -159,8 +168,9 @@ func telegramBatchLine(it Item, idx int) string {
 	return fmt.Sprintf("%d. %s · %s", idx, SeverityLabel(it.Severity), it.Title())
 }
 
-// telegramBatchTitle 渲染汇总消息的标题行。条数用的是**本条实际包含**的条数，
-// 而不是本批总数——否则读者会以为消息头写的数字就是全部。
+// The number of rows is the number of rows that **this article actually contains**, not the total
+// number of rows in the batch — otherwise the reader would think that the number written for the
+// message header is the total number.
 func telegramBatchTitle(m Message, items []Item, total int) string {
 	title := fmt.Sprintf("漏洞汇总 · 共 %d 条", total)
 	if extra := total - len(items); extra > 0 {
@@ -172,9 +182,9 @@ func telegramBatchTitle(m Message, items []Item, total int) string {
 	return title
 }
 
-// telegramEscape 转义 HTML 文本内容。
-// Telegram 只认这三种实体，转义后 &amp; 之类的已有实体会被二次转义——这正是
-// 期望行为：我们要显示的是原始字符，不是让用户注入 HTML。
+// Telegram only recognizes these three entities, and the entities that already exist, such as
+// &amp;, are escaped a second time after being translated — this is exactly what we expect: we want
+// to display the original characters, not have the user inject HTML.
 func telegramEscape(s string) string {
 	s = strings.ReplaceAll(s, "&", "&amp;")
 	s = strings.ReplaceAll(s, "<", "&lt;")
@@ -182,8 +192,9 @@ func telegramEscape(s string) string {
 	return s
 }
 
-// telegramEscapeAttr 转义 HTML 属性值。在文本转义之外还要处理引号——
-// URL 里带引号会提前闭合 href 属性，把后面的内容变成注入点。
+// telegramEscapeAttr Transposes the HTML attribute value. In addition to transposing text, it also
+// handles quotation marks — quotation marks in URLs will pre-close the href attribute, turning the
+// content after them into an injection point.
 func telegramEscapeAttr(s string) string {
 	s = telegramEscape(s)
 	s = strings.ReplaceAll(s, "\"", "&quot;")

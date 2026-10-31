@@ -14,8 +14,7 @@ import (
 	"github.com/Autumn-27/norma/transcript"
 )
 
-// goalsDefaultTmpl is the built-in EDITABLE body (段 [A]) of the goals-decomposer
-// prompt, seeded into agent_prompts. No template vars are used today.
+// 1.
 const goalsDefaultTmpl = `你是渗透测试目标分解器。你的职责是从用户输入中识别出**最终要达成的结果**，而不是规划攻击步骤。
 
 **第一步（拆分目标之前先做）：抽取操作约束**
@@ -82,9 +81,9 @@ type GoalSpec struct {
 // shares the rate limiter, gets recorded by llmrec, and participates in LLM
 // failover instead of quietly bypassing all three.
 //
-// desc is the task's free-text description (背景：靶标范围/flag 数量/交战说明等).
-// It is fed alongside the goal so the decomposer no longer splits blind — the
-// prompt still forbids inventing anything the two texts don't state.
+// desc is the task's free-text description (background: target range/flag number/combat description
+// etc). It is fed alongside the goal so the decomposer no longer splits blind — the prompt still
+// forbids inventing anything the two texts don't state.
 //
 // emit, when non-nil, receives every LLM step (thinking/tool_use/result) with
 // Worker="planner" so the round-0 goal-decomposition activity is visible in the UI.
@@ -111,12 +110,11 @@ func DecomposeGoalsWithProvider(ctx context.Context, prov llm.Provider, dataDir,
 	if prov == nil {
 		return nil
 	}
-	// 目标拆解是一次性调用：不挂 transcript store，所以 agentcore 不会往 ctx 上挂
-	// session id（它只在有 writer 时才挂，见 agentcore.Prompt）。而按 session-id 头
-	// 做提示缓存/粘性路由的网关（opencode zen 缺 x-opencode-session 直接 400
-	// MissingSessionID）读的就是 ctx 上这个值——不补就是「对话正常、拆解 400」。
-	// 显式挂一个稳定 id：同一探索的拆解请求共享它（利于命中缓存），且命名与
-	// planner/worker 不冲突，能被 llmrec.parseSession 正确归因。
+	// The target parsing is a one-time call: no transcript store attachment, so agentcore does not
+	// attach session id to the ctx (it only attaches when there is a writer, see agentcore.Prompt).
+	// And the gateway that prompts for cache/viscous routing using the session-id header (opencode
+	// zen missing x-opencode-session directly 400 MissingSessionID) reads this value from the ctx —
+	// no replenishment is "dialogue is ok, parse 400").
 	if ts != nil {
 		ctx = transcript.WithSessionID(ctx, fmt.Sprintf("exp%d-goals", ts.ID()))
 	}
@@ -128,8 +126,9 @@ func DecomposeGoalsWithProvider(ctx context.Context, prov llm.Provider, dataDir,
 	// {{.EngagementDescription}} template var — else a prompt that references the var
 	// would inject the description twice. System prompt stays pure static instructions.
 	sys := renderSystem("goals", goalsDefaultTmpl, GoalsVars{DataDir: dataDir, Now: nowStr()})
-	// set_constraints 始终可用(不依赖 asset store):正文已含「先抽操作约束再拆目标」这步
-	// (可在 agent 编辑页改措辞),这里只需接上工具。
+	// set_constraints is always available (not dependent on the asset store): the body already
+	// contains the "take action constraints first and then untarget" step (which can be reworded in
+	// the agent edit page), so you just need to attach the tool here.
 	tools := []actool.CoreTool{tsx.setGoals(), tsx.setConstraints()}
 	// Wire add_task_scope only when we have a real asset store + task to write to.
 	// The scope-extraction tail is appended in lockstep so the prompt never asks for
@@ -156,10 +155,11 @@ func DecomposeGoalsWithProvider(ctx context.Context, prov llm.Provider, dataDir,
 		Tools:                  tools,
 		PermissionMode:         acperm.ModeBypass,
 		DisableBackgroundTasks: true,
-		// 3 步(抽约束 → 登记范围 → 拆目标)各需一次工具调用,给足回合避免收尾前漏调 set_goals。
+		// The 3 steps (pull constraints → register scope → untarget) require one tool call each, so
+		// that the round is completed without missing set_goals before the end.
 		MaxTurns:     8,
-		NonStreaming: nonStreaming, // 该 profile 选非流式时走 Provider.Complete
-		MaxTokens:    maxTokens,    // 0 = 不发上限,由服务端默认值决定
+		NonStreaming: nonStreaming, // Provider.Complete when the profile is non-fluid
+		MaxTokens:    maxTokens,    // 0 = no limit, determined by the server default value
 	}, userMsg, captureEmit)
 	// set_goals persisted the goals directly; read them back so the caller sees what
 	// was written (empty slice ⇒ the LLM produced nothing ⇒ caller falls back).

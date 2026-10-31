@@ -1,13 +1,16 @@
 "use client";
 
-// LLM 重试配置的共用件：五层重试各自的「次数 + 间隔」。
+// Common to LLM retry configurations: Five levels of retry each with "number of times + interval".
 //
-// 五层从内到外：建连(SDK) → 空响应(SDK) → 同 provider 安全窗口 → 轮询熔断 → 意图重跑。
-// 前三层跟着端点走，所以每个模型配置都能覆盖全局默认；后两层是进程级的，只有全局一份。
+// Five layers from inside out: build connection (SDK) → empty response (SDK) → same provider
+// security window → query meltdown → intent rerun. The first three layers follow the endpoint, so
+// each model configuration overrides the global default; the last two layers are process-level and
+// only have one global.
 //
-// 所有输入都遵循同一套「留空 = 不配置」语义，与后端 db.RetryRule 一致：
-//   次数   空/0 = 用内置默认 | -1 = 关闭这层重试 | >0 = 用这个次数
-//   间隔   空/0 = 用这层原本的指数退避 | >0 = 改用这个固定毫秒间隔
+// All input follows the same set of "empty = unconfigured" semantics, consistent with the
+// db.RetryRule backend: Number of times empty/0 = use built-in default | -1 = disable this layer
+// retry | >0 = use this number of times interval empty/0 = avoid using the original exponential of
+// this layer | >0 = use this fixed millisecond interval
 
 import * as React from "react";
 
@@ -34,19 +37,19 @@ const ZERO_POLICY: LLMRetryPolicy = {
 
 type LayerMeta = {
   title: string;
-  /** 这层重试发生在哪、由谁执行 */
+  /** Where and by whom this retry occurs */
   where: string;
-  /** 什么样的错误会走到这层——具体到状态码，别让人猜 */
+  /** What kind of errors go to this level—specifically to the status code, don't let anyone guess. */
   trigger: string;
-  /** 长得像但【不】走这层的错误，省得填了没反应还以为是 bug */
+  /** Looks like a bug, but it's not a bug. */
   skips?: string;
   desc: string;
   attemptsLabel: string;
-  /** 次数留空时的默认值，用于占位符 */
+  /** Default value for placeholders if number is left empty */
   defAttempts: number;
-  /** 间隔留空时的默认策略，用于占位符 */
+  /** Default policy for spaces left blank, used for placeholders */
   defInterval: string;
-  /** 次数填 -1 的含义 */
+  /** The meaning of the number -1 */
   offHint: string;
 };
 
@@ -116,7 +119,7 @@ export const RETRY_LAYERS = {
 
 type LayerKey = keyof typeof RETRY_LAYERS;
 
-/** 毫秒的人话，只用于在输入框旁边回显，免得数零。 */
+/** The milliseconds are used only to reflect next to the input box, so that zeros are not counted. */
 function humanMs(ms: number) {
   if (!Number.isFinite(ms) || ms <= 0) return "";
   if (ms < 1000) return `${ms}ms`;
@@ -124,7 +127,7 @@ function humanMs(ms: number) {
   return `${Number((ms / 60_000).toFixed(2))}min`;
 }
 
-/** 受控数字输入：空串 ↔ 0，中间态（"-"、"1e"）原样留在本地，不打扰父级。 */
+/** Controlled digital input: empty string ↔ 0, intermediate states ("-", "1e") are left locally, not disturbing the parent. */
 function NumField({
   id,
   value,
@@ -139,8 +142,9 @@ function NumField({
   min: number;
 }) {
   const [text, setText] = React.useState(value === 0 ? "" : String(value));
-  // 父级换了一整套值（读取到策略、切换配置）时跟上；自己敲字时不会走到这里，
-  // 因为那时 value 已经等于本地文本 parse 后的结果。
+  // The parent follows when a whole set of values is changed (read to policy, switch
+  // configuration); it does not go here when you type, because the value is already equal to the
+  // result of parsing the local text.
   React.useEffect(() => {
     const incoming = value === 0 ? "" : String(value);
     setText((cur) => (Number(cur || 0) === value ? cur : incoming));
@@ -162,7 +166,7 @@ function NumField({
   );
 }
 
-/** 一层重试的两个旋钮。idPrefix 用来在同一页出现多次时保住 label 的 htmlFor。 */
+/** Two knobs for retry on a layer. idPrefix is used to preserve the htmlFor of label when it appears multiple times on the same page. */
 export function RetryRuleFields({
   layer,
   idPrefix,
@@ -174,7 +178,7 @@ export function RetryRuleFields({
   idPrefix: string;
   value: LLMRetryRule;
   onChange: (r: LLMRetryRule) => void;
-  /** true = 配置抽屉里的紧凑版：省掉展开说明，只留「什么错误会走到这层」这一句 */
+  /** true = Compact version in the configuration drawer: omit the expandable description, just leave the phrase "What errors go to this level" */
   compact?: boolean;
 }) {
   const meta = RETRY_LAYERS[layer];
@@ -186,7 +190,7 @@ export function RetryRuleFields({
           <Label className="text-sm">{meta.title}</Label>
           <span className="text-muted-foreground text-xs">{meta.where}</span>
         </div>
-        {/* 哪些错误会走到这层，具体到状态码——填了旋钮却看不到效果，多半是错误压根不落在这层。 */}
+        {/* What errors go to this layer, specifically to the status code - if you fill the rotary button but you don't see the effect, most of the time the errors are not rooted in this layer. */}
         <p className="text-muted-foreground text-xs">
           <span className="font-medium text-foreground">触发</span>：{meta.trigger}
         </p>
@@ -229,7 +233,7 @@ export function RetryRuleFields({
   );
 }
 
-/** 模型配置抽屉里的三层覆盖（跟着端点走的那三层）。 */
+/** The model configures the three layers of coverage in the drawer (the three layers that follow the endpoint). */
 export function ProfileRetryFields({
   value,
   onChange,
@@ -261,7 +265,7 @@ export function ProfileRetryFields({
   );
 }
 
-/** 「重试与退避」tab：五层的全局默认值。 */
+/** Retry and Avoid tab: Global default value for the five layers. */
 export function RetryPolicyPanel() {
   const [policy, setPolicy] = React.useState<LLMRetryPolicy>(ZERO_POLICY);
   const [loading, setLoading] = React.useState(true);
@@ -287,7 +291,8 @@ export function RetryPolicyPanel() {
     if (saving) return;
     setSaving(true);
     try {
-      // 后端会把越界值夹回区间并回传，直接用回传值刷新，所见即所存。
+      // The backend will retrieve the cross-boundary values from the interval and return them,
+      // refreshing them directly with the returned values, so that what is seen is what is saved.
       const saved = await api.saveLLMRetryPolicy(policy);
       setPolicy({ ...ZERO_POLICY, ...saved });
       toast.success("已保存，即时生效（正在跑的这一轮调用仍用旧参数）");

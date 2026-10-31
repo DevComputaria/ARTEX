@@ -13,27 +13,29 @@ import (
 	"github.com/Autumn-27/artex/db"
 )
 
-// 发现页「导出」用的渲染:把一批 findings 表行渲染成汇总 Markdown、单条 Markdown、
-// 或 CSV。JSON 由 server 层直接用 DTO 序列化,不在此处。
+// Rendering for the find page export: Render a row of the findings table as summary Markdown,
+// single-string Markdown, or CSV. JSON is serialized directly by the server layer with DTO and is
+// not here.
 
-// sortFindingsForExport 按严重等级降序、再按时间倒序排,与汇总报告的分组一致。
+// sortFindingsForExport Sorts down by severity and then backwards in time, consistent with the
+// grouping in the summary report.
 func sortFindingsForExport(fs []*db.DBFinding) {
 	sort.SliceStable(fs, func(i, j int) bool {
 		ri, rj := sevRank[fs[i].Severity], sevRank[fs[j].Severity]
 		if ri != rj {
-			return ri < rj // sevRank 越小越严重
+			return ri < rj // The smaller the risk
 		}
 		return fs[i].CreatedAt.After(fs[j].CreatedAt)
 	})
 }
 
-// findingTitle 取漏洞可读标题:名称 → 类别 → 「未分类」。
+// findingTitle Gets the vulnerability's readable title: Name → Category → Unclassified.
 func findingTitle(f *db.DBFinding) string {
 	return nz(f.Name, nz(f.VulnClass, "未分类"))
 }
 
-// FindingsMarkdown 把一批 findings 整合成一份汇总报告(摘要 + 按严重等级分组,
-// 每条含类别/状态/所属任务/证据/详细报告)。
+// FindingsMarkdown Consolidates a set of findings into one summary report (summary + grouping by
+// severity level, each with category/state/task/evidence/detailed report).
 func FindingsMarkdown(fs []*db.DBFinding, generatedAt time.Time) string {
 	items := append([]*db.DBFinding(nil), fs...)
 	sortFindingsForExport(items)
@@ -43,7 +45,7 @@ func FindingsMarkdown(fs []*db.DBFinding, generatedAt time.Time) string {
 	fmt.Fprintf(&b, "- **生成时间**：%s\n", generatedAt.Format("2006-01-02 15:04:05"))
 	fmt.Fprintf(&b, "- **发现总数**：%d 个\n\n", len(items))
 
-	// 摘要:各严重等级计数。
+	// Summary: Counts each severity level.
 	counts := map[string]int{}
 	for _, f := range items {
 		counts[f.Severity]++
@@ -90,7 +92,8 @@ func FindingsMarkdown(fs []*db.DBFinding, generatedAt time.Time) string {
 	return b.String()
 }
 
-// SingleFindingMarkdown 渲染单条漏洞为一份独立 Markdown(用于「一漏洞一文件」打包)。
+// SingleFindingMarkdown renders a single vulnerability as an independent Markdown (for "one file,
+// one vulnerability" packaging).
 func SingleFindingMarkdown(f *db.DBFinding, generatedAt time.Time) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# [%s] %s\n\n", strings.ToUpper(nz(f.Severity, "info")), findingTitle(f))
@@ -121,8 +124,9 @@ func SingleFindingMarkdown(f *db.DBFinding, generatedAt time.Time) string {
 
 var unsafeFilenameChars = regexp.MustCompile(`[^\p{Han}\p{L}\p{N}._-]+`)
 
-// FindingFilename 为「一漏洞一文件」生成安全的 .md 文件名,形如
-// `critical_SQL注入_#123.md`。去掉路径分隔符与控制字符,避免 zip 内非法路径。
+// FindingFilename generates a safe.md filename for "one file per vulnerability" in the form of
+// `critical_SQL_inject_#123.md`. Remove path separators and control characters to avoid illegal
+// paths within zip.
 func FindingFilename(f *db.DBFinding) string {
 	sev := nz(f.Severity, "info")
 	title := findingTitle(f)
@@ -132,7 +136,7 @@ func FindingFilename(f *db.DBFinding) string {
 	if name == "" {
 		name = fmt.Sprintf("finding_%d", f.ID)
 	}
-	// 防御性:再剥一层路径,杜绝 zip slip。
+	// Defensive: Peel off a layer of path, eliminate zip slip.
 	name = path.Base(name)
 	if len(name) > 120 {
 		name = name[:120]
@@ -140,8 +144,9 @@ func FindingFilename(f *db.DBFinding) string {
 	return name + ".md"
 }
 
-// FindingsCSV 把一批 findings 渲染成 CSV(带 UTF-8 BOM,便于 Excel 正确识别中文)。
-// 不含大段 report/evidence 全文,只放摘要类字段;需要全文用 Markdown/JSON 导出。
+// FindingsCSV Renders a set of findings as CSV (with UTF-8 BOM, so Excel can recognize Chinese
+// correctly). Does not contain large report/evidence text, only summary type fields; requires full
+// text export in Markdown/JSON.
 func FindingsCSV(fs []*db.DBFinding) []byte {
 	items := append([]*db.DBFinding(nil), fs...)
 	sortFindingsForExport(items)

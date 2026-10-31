@@ -26,8 +26,10 @@ type chatAttachment struct {
 	Name string `json:"name"`
 	Path string `json:"path"`
 	Size int64  `json:"size"`
-	// Abs 是落盘的绝对路径(m.dir 已是绝对)。建任务前暂存(scope=staging)时前端要用它把
-	// 提示词写进描述;task/session 走 composeAgentMessage 在后端拼路径,不依赖此字段。
+	// Abs is the absolute path to the dropbox (m.dir is already absolute). When building tasks in
+	// scope=staging, the front-end uses it to write the prompt into the description; task/session
+	// goes to composeAgentMessage In the back-end, the path to compose does not depend on this
+	// field.
 	Abs string `json:"abs,omitempty"`
 }
 
@@ -41,8 +43,9 @@ type chatAttachment struct {
 //
 //	scope=task    → <workDir>/tasks/<id>/uploads/
 //	scope=session → <workDir>/sessions/<id>/uploads/
-//	scope=staging → <workDir>/drafts/<id>/uploads/   (建任务前暂存:任务尚无 ID,
-//	                文件先落这里,前端按返回的 abs 绝对路径写进任务描述)
+//	scope=staging → <workDir>/drafts/<id>/uploads/ (staging before a task is created: the task has
+//	no ID, the files are dropped here first, and the abs absolute path returned by the front end is
+//	written into the task description)
 func (s *Server) chatUpload(w http.ResponseWriter, r *http.Request) {
 	var sub string
 	taskScoped := false

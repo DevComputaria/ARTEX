@@ -163,25 +163,25 @@ function mergeBySeq(current: Activity[], incoming: Activity[]): Activity[] {
 }
 
 // statusIcon maps a session status to its icon. Worker terminal states are
-// distinct & color-coded: 完成(绿勾圈) / 取消停止(琥珀斜杠圈) / 出错(红叉圈) /
-// 步数耗尽(紫). running=蓝色转圈, pending(待领取)=灰时钟.
+// distinct & color-coded: Complete (green check mark) / Cancel Stop (amber bar mark) / Error (red
+// fork mark) / Steps Exhausted (purple). running=blue turn, pending=grey clock.
 function statusIcon(status: SessionStatus) {
   switch (status) {
-    case "running": // 执行中
+    case "running": // In progress
       return <Loader2Icon className="size-3.5 animate-spin text-blue-500" />;
     case "paused":
       return <PauseIcon className="size-3.5 text-amber-500" />;
-    case "pending": // 待领取(open intent)
+    case "pending": // Open intent
       return <ClockIcon className="size-3.5 text-muted-foreground" />;
-    case "done": // 完成
+    case "done": // Completed
       return <CircleCheckIcon className="size-3.5 text-emerald-500" />;
-    case "stopped": // 取消/停止(被 planner 终止)
+    case "stopped": // Cancelled/Stop (Terminated by Planner)
       return <CircleSlashIcon className="size-3.5 text-amber-500" />;
-    case "blocked": // 出错
+    case "blocked": // Error.
       return <CircleXIcon className="size-3.5 text-red-500" />;
-    case "exhausted": // 步数耗尽(撞 max_turns)
+    case "exhausted": // Exhaustion of steps (hit max_turns)
       return <ZapOffIcon className="size-3.5 text-violet-500" />;
-    case "deleted": // 用户假删除
+    case "deleted": // User fake deletion
       return <CircleSlashIcon className="size-3.5 text-muted-foreground" />;
   }
 }
@@ -244,9 +244,7 @@ const roleMeta = {
 // dedicated backend "sessions" endpoint — it is a fixed UI affordance whose
 // transcript is the main-agent activity stream (worker="mainagent") for the task.
 // A main-agent session is one resettable conversation segment. Segment 0 is the
-// original session; "新建会话" creates further segments (seq 1,2,…) so the agent
-// starts on a clean transcript while the task's graph/assets/goal stay shared. Each
-// segment is a switchable UI session; only the current (highest) one is writable.
+// The first session is the last session.
 const mainSessionId = (seg: number) => `s-main-${seg}`;
 const mainSessionKey = (seg: number) => `main:${seg}`;
 const mainSessionTitle = (seg: number) => `主 Agent · 会话 #${seg + 1}`;
@@ -309,9 +307,9 @@ function intentStatus(state: string): SessionStatus {
       return "stopped";
     case "paused":
       return "paused";
-    case "open": // 待领取，区别于执行中
+    case "open": // Receivable, separate from in progress
       return "pending";
-    case "deleted": // 用户假删除
+    case "deleted": // User fake deletion
       return "deleted";
     default: // running
       return "running";
@@ -369,7 +367,7 @@ function SessionItem({
     s.role === "worker" &&
     !s.inherited &&
     !deleted &&
-    // pending = 待领(open)意图;连同运行中/已暂停都允许删除。
+    // pending = open intent; deleted together with running/paused.
     (s.status === "running" || s.status === "paused" || s.status === "pending");
   return (
     <div
@@ -515,9 +513,11 @@ export function SessionsTab({ taskId }: { taskId: string }) {
   const [currentSeg, setCurrentSeg] = React.useState(0);
   const [creatingMain, setCreatingMain] = React.useState(false);
   const [confirmNewMain, setConfirmNewMain] = React.useState(false);
-  // 手机端（<lg）会话列表默认折叠：屏幕高度本就紧张，列表若固定占掉 10~15rem，
-  // 下方的会话记录会被挤到只剩标题与输入框。折叠后记录区拿到几乎全部高度，
-  // 点标题栏可展开选会话，选完自动收起。桌面端不受影响（lg 起始终展开）。
+  // The mobile end (<lg) session list is collapsed by default: the screen height is tight, the list
+  // if fixed takes up 10 ~ 15rem, the session record below will be crammed to the left only title
+  // and input box. Collapsed record area gets almost the entire height, point title bar can expand
+  // selected session, selecting automatically collapsed. Desktop end is not affected (lg always
+  // expands).
   const [listOpen, setListOpen] = React.useState(false);
   // Per-session lazily-loaded caches, keyed by session_key (main | plan | intent:<id>).
   const [store, setStore] = React.useState<SessionStore>({});
@@ -536,12 +536,14 @@ export function SessionsTab({ taskId }: { taskId: string }) {
   const [controllingIntent, setControllingIntent] = React.useState<string | null>(null);
   const [cancelIntent, setCancelIntent] = React.useState<Session | null>(null);
   const [cancelReason, setCancelReason] = React.useState("");
-  // 删除模式:soft=假删除(默认,置 deleted + 记原因,保留数据)| hard=真删除(级联移除独占子孙)。
+  // Delete mode: soft=false deletion (default, set deleted + remember reason, retain data)|
+  // hard=true deletion (cascade removal of exclusive children).
   const [deleteMode, setDeleteMode] = React.useState<"soft" | "hard">("soft");
   const [workerMessage, setWorkerMessage] = React.useState("");
   const [workerMessageRequestId, setWorkerMessageRequestId] = React.useState("");
   const [workerMessageSending, setWorkerMessageSending] = React.useState(false);
-  // 方式1 文件上传:选好的附件(已落到任务工作目录 uploads/),随下条消息一起发。
+  // Method 1 Uploading files: Send the selected attachment (which is already in the task's working
+  // directory uploads/) with the next message.
   const [attachments, setAttachments] = React.useState<ChatAttachment[]>([]);
   const [uploading, setUploading] = React.useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -609,14 +611,16 @@ export function SessionsTab({ taskId }: { taskId: string }) {
           patchIntentState(session.intent_id, "open");
           toast.success(`Worker #${session.intent_id} 已恢复，等待重新领取`);
         } else if (mode === "hard") {
-          // 真删除:意图及独占下游已物理移除,从列表剔除该行。
+          // True Delete: The intention and exclusive downstream has been physically removed, and
+          // the row is removed from the list.
           patchIntentState(session.intent_id);
           const d = res.deleted;
           const extra = d ? `（含 ${d.intents} 意图 / ${d.facts} 事实 / ${d.findings} 漏洞）` : "";
           toast.success(`Worker #${session.intent_id} 及其独占下游已彻底删除${extra}`);
           setCancelReason("");
         } else {
-          // 假删除:意图置 deleted、记录删除原因,保留节点与产出。
+          // Fake delete: Intentionally deleted, records the reason for deletion, and preserves
+          // nodes and output.
           patchIntentState(session.intent_id, "deleted");
           toast.success(`Worker #${session.intent_id} 已删除（原因已记录，规划者将据此重新规划）`);
           setCancelReason("");
@@ -1156,7 +1160,7 @@ export function SessionsTab({ taskId }: { taskId: string }) {
     for (const node of allIntents) {
       let title = `Intent ${node.id}`;
       let parsedPayload: unknown = node.payload;
-      // 假删除:意图 state='deleted',删除原因在独立字段 delete_reason 上。
+      // Fake deletion: Intent state='deleted', delete reason in the separate field delete_reason.
       const deleted = node.state === "deleted";
       const deleteReason = node.delete_reason ?? "";
       if (node.payload) {
@@ -1280,8 +1284,9 @@ export function SessionsTab({ taskId }: { taskId: string }) {
   const activeSettled =
     !!activeLast && (activeLast.kind === "result" || (activeLast.kind === "text" && activeLast.is_error));
   const mainBusy = isMain && (sending || (!activeSettled && (mainChatRunning ?? recentLive(activeKey))));
-  // 折叠态（手机端）标题栏要替代整张列表：显示当前会话名 + 其它会话的未读合计，
-  // 否则收起后既不知道自己在看哪个会话，也看不到别处有新消息。
+  // The collapsed (mobile) header bar replaces the entire list: it shows the current session name +
+  // the total unread of other sessions, otherwise you don't know which session you are looking at
+  // when you collapse it, nor do you see new messages elsewhere.
   const activeDisplayTitle = (active.role === "worker" ? sessionMeta.get(active.id)?.title : "") || active.title;
   const hiddenUnread = React.useMemo(
     () => Object.entries(store).reduce((sum, [key, s]) => (key === activeKey ? sum : sum + s.unread), 0),
@@ -1547,7 +1552,8 @@ export function SessionsTab({ taskId }: { taskId: string }) {
   }
 
   const mainLoaded = !!store[currentMainKey]?.loaded;
-  // 发送键位由系统设置决定（localStorage），默认 Enter 发送。
+  // The sending key bit is determined by the system settings (localStorage), and is sent by default
+  // with Enter.
   const sendMode = useChatSendMode();
   // What the transcript pane should show for the active session.
   const showLoader = !activeState || (activeState.loading && !activeState.loaded);
@@ -1563,9 +1569,9 @@ export function SessionsTab({ taskId }: { taskId: string }) {
 
   return (
     <TooltipProvider delayDuration={300}>
-      {/* 高度预留：页面头部（标题行 + 目标 + Tabs ≈ 7.5rem）+ 内容内边距。手机端 p-4、
-        桌面端 lg:p-6，且桌面还要留出滚动余量，所以两档分别预留 10rem / 13rem —— 手机端
-        沿用 13rem 会白白吃掉 3rem 的记录高度。 */}
+      {/* Height reserve: page header (header line + target + tabs ≈ 7.5rem) + content inner margin.
+        The desktop end lg: p-6, and the desktop also leaves a scroll margin, so two bands reserved 10rem / 13rem respectively - mobile end
+        Following 13rem will eat up 3rem of record height in vain. */}
       <div
         className={cn(
           "grid h-[calc(100svh-10rem)] min-h-0 grid-cols-1 gap-4",
@@ -1693,7 +1699,7 @@ export function SessionsTab({ taskId }: { taskId: string }) {
                           onClick={() => {
                             approvalFocus.close();
                             setActiveId(s.id);
-                            setListOpen(false); // 手机端选完即收起，把高度还给会话记录
+                            setListOpen(false); // When the phone is selected, it is pulled up and the altitude is returned to the session recorder.
                             setWorkerMessage("");
                             setWorkerMessageRequestId("");
                           }}
@@ -1796,7 +1802,7 @@ export function SessionsTab({ taskId }: { taskId: string }) {
               <div className="ml-auto flex min-w-0 max-w-full items-center justify-end gap-x-3 gap-y-1 text-xs text-muted-foreground max-sm:w-full max-sm:flex-wrap">
                 {tokenTotal.any && (
                   <Tooltip>
-                    {/* 手机端用短标签（入/缓/出）：长标签会把这一行撑成两行，进一步压缩记录区。 */}
+                    {/* Short labels (in/slow/out) on the mobile end: long labels will split this line into two lines, further compressing the recording area. */}
                     <TooltipTrigger asChild>
                       <span className="inline-flex min-w-0 items-center">
                         <TokenMetrics

@@ -12,7 +12,7 @@ export function StatTile({ label, value, hint, tone }: { label: string; value: s
   );
 }
 
-// formatBacklog 把积压毫秒数渲染成人看得懂的量级。
+// formatBacklog Renders the accumulated milliseconds in an adult-readable scale.
 export function formatBacklog(ms: number): string {
   if (!ms) return "—";
   if (ms < 60_000) return `${Math.round(ms / 1000)} 秒`;

@@ -13,8 +13,9 @@ import (
 	actool "github.com/Autumn-27/norma/tool"
 )
 
-// assetInterceptCandidates 提取一条待插入资产输入项的 域名/IP/URL 候选串，用于资产拦截匹配。
-// URL 的 host 会拆出归类，使「只带 URL」的服务/端点资产也能被 域名/IP 规则命中。
+// assetInterceptCandidates Extracts a domain/IP/URL candidate string to insert into the asset input
+// for asset interception matching. The host of the URL is declassified so that service/endpoint
+// assets with "URL only" are also hit by the domain/IP rule.
 func assetInterceptCandidates(item assetInputItem) (domains, ips, urls []string) {
 	add := func(dst *[]string, s string) {
 		if s = strings.TrimSpace(s); s != "" {
@@ -42,7 +43,8 @@ func assetInterceptCandidates(item assetInputItem) (domains, ips, urls []string)
 	return domains, ips, urls
 }
 
-// assetInputLabel 返回一条待插入资产的简短标识，用于拦截说明消息。
+// assetInputLabel Returns a short identifier of the asset to be inserted, used to intercept
+// description messages.
 func assetInputLabel(item assetInputItem) string {
 	typ := strings.TrimSpace(item.Type)
 	var target string
@@ -127,7 +129,8 @@ func (t *ToolSet) insertAssets() actool.CoreTool {
 			"auth/technologies/params 为追加合并(append)，不覆盖原值。\n"+
 			"返回：{results:[{index,id,type}], errors:[{index,error}]}",
 		obj(map[string]any{
-			// task_id 不暴露给模型：worker 归属哪个 task 由程序经 SetTaskID 权威赋值(见 handler)。
+			// task_id is not exposed to the model: which task the worker belongs to is assigned by
+			// the program through SetTaskID (see handler).
 			"assets": map[string]any{
 				"type":        "array",
 				"description": "资产数组，每个元素对应一条资产记录",
@@ -187,7 +190,7 @@ func (t *ToolSet) insertAssets() actool.CoreTool {
 						"description": "发现的认证信息列表，每条含 type/username/password 等字段（可选，追加不覆盖）",
 						"items":       map[string]any{"type": "object"},
 					},
-					// service (other，非 HTTP)
+					// service (other, non-HTTP)
 					"service_name": str("服务名称，如 ssh/mysql/redis（service 非 HTTP 时必填）"),
 					"port":         intp("端口号（service 非 HTTP 时必填）"),
 					// endpoint
@@ -210,8 +213,9 @@ func (t *ToolSet) insertAssets() actool.CoreTool {
 			if err := json.Unmarshal(in, &a); err != nil {
 				return actool.Errorf("invalid input: " + err.Error()), nil
 			}
-			// task_id 由程序权威赋值(worker: SetTaskID)，不接受模型传入——避免模型漏传/错传
-			// 导致资产未归任务或归错任务。无任务上下文的调用方(auto/pentest/chat)其 t.taskID=0。
+			// task_id is assigned by the program authoritatively (worker: SetTaskID), and does not
+			// accept model input – avoiding model leakage/error transmission leading to assets not
+			// being assigned to tasks or being assigned to wrong tasks.
 			taskID := t.taskID
 
 			type result struct {
@@ -227,8 +231,8 @@ func (t *ToolSet) insertAssets() actool.CoreTool {
 			var results []result
 			var errs []errEntry
 
-			// 资产闸门规则一次性载入；读取失败则跳过判定（不阻断插入）。
-			// 拦截规则 = 全局 ∪ 任务级 block；允许规则 = 任务级 allow。
+			// The asset gateway rules are loaded once; read failures skip the decision (do not
+			// block insertion).
 			blockRules, _ := t.as.ListAssetInterceptRules()
 			var allowRules []db.AssetInterceptRule
 			if t.taskID > 0 {
@@ -239,7 +243,8 @@ func (t *ToolSet) insertAssets() actool.CoreTool {
 			}
 
 			for i, item := range a.Assets {
-				// 资产闸门：先拦截后允许，被拒的资产禁止插入（跳过 Upsert 及后续副作用）。
+				// Asset gateway: first blocked, then allowed, denied assets are not inserted
+				// (skipping upsert and subsequent side effects).
 				domains, ips, urls := assetInterceptCandidates(item)
 				if d := db.EvaluateAssetGate(blockRules, allowRules, domains, ips, urls); !d.Allowed {
 					errs = append(errs, errEntry{
@@ -352,10 +357,13 @@ func (t *ToolSet) insertAssets() actool.CoreTool {
 					}
 					_ = t.as.SetTaskAssetSource(taskID, id, "agent", summary, sourceNodeID)
 				}
-				// 自动入测试范围(source='auto')：只对 worker 顶层显式插入的这一项，按其
-				// 类型加保守范围；side-effect 派生的资产不经此处，故范围不盲目扩大。taskID=0 时无操作。
-				// 与覆盖度开关无关：task_scope 是任务的范围边界(list/查询的过滤基准)，
-				// 覆盖度开关只决定要不要把它当分母去算指标，不决定要不要累积范围本身。
+				// Auto-in test scope (source='auto'): only the worker top level explicitly inserted
+				// this item, conservatively expands the scope by its type; side-effect derived
+				// assets do not pass through here, so the scope is not blindly expanded. No action
+				// when taskID=0. Not related to the coverage switch: task_scope is the scope
+				// boundary of the task (the filter baseline for the list/query), the coverage
+				// switch only decides whether to use it as a denominator deduction indicator, not
+				// whether to cumulate the scope itself.
 				{
 					svcIP := item.ServiceIP
 					if svcIP == "" {
@@ -455,7 +463,7 @@ func (t *ToolSet) addTaskScope() actool.CoreTool {
 			}
 			var a struct {
 				Entries    []scopeEntry `json:"entries"`
-				scopeEntry              // 单条模式
+				scopeEntry              // Single-bar mode
 				Reason     string       `json:"reason"`
 			}
 			_ = json.Unmarshal(in, &a)
@@ -583,7 +591,7 @@ func (t *ToolSet) listAssets() actool.CoreTool {
 	)
 }
 
-// listCompanies lets an agent enumerate companies (企业) with their scope + asset count.
+// listCompanies lets an agent enumerate companies with their scope + asset count.
 func (t *ToolSet) listCompanies() actool.CoreTool {
 	return readTool(
 		"list_companies",
@@ -643,20 +651,26 @@ func splitLines(s string) []string {
 // WorkerTools returns the tool set for a work agent.
 func (t *ToolSet) WorkerTools() []actool.CoreTool {
 	return []actool.CoreTool{
-		// list_findings 保留：报漏洞前先查本任务已确认漏洞，避免重复上报同一漏洞。
+		// list_findings Reserve: Check for vulnerabilities identified by this task before reporting
+		// a vulnerability to avoid repeatedly reporting the same vulnerability.
 		t.listFindings(),
 		t.addFinding(), t.recordFact(),
 		// asset management (handlers guard nil store internally)。
-		// add_company_scope 不给 worker：定义企业资产范围属规划/主控/Auto 的职责，worker 只执行探索。
+		// add_company_scope Not given to worker: defines the scope of enterprise assets under the
+		// responsibility of the planning/controlling/auto role, the worker only performs
+		// exploration.
 		t.insertAssets(), t.listAssets(),
-		// 跨 work 回看：worker 也可复用其他 work 的观察，避免重复劳动。
-		// search_all_worker_traces：不必先知道 intent_id，按关键字全局捞命中步骤；
-		// get_worker_trace：锁定某条 work 后列步骤/就地搜/取完整内容。
+		// Cross work recall: Worker can also reuse observations from other work to avoid
+		// duplication of work. search_all_worker_traces: Search all worker traces by keyword
+		// without knowing intent_id; get_worker_trace: Lock the following steps of a work/locally
+		// search/get the entire contents.
 		t.searchAllWorkerTraces(), t.getWorkerTrace(),
-		// node_detail：worker 拿到 intent_id/节点 id 后可查该节点完整详情（配合上面的回看）。
+		// node_detail: The worker gets the intent_id/node id to check for the complete details of
+		// the node (in conjunction with the review above).
 		t.nodeDetail(),
-		// 以下工具仍【不给】worker，只留给 planner/main（读上下文、跨 work 复盘是规划职责，
-		// worker 只做单条意图的执行与写回）：list_facts / list_companies / list_worker_traces。
+		// The following tools are still [not given] to worker, and are left for planner/main (the
+		// context-read, cross-work replication is the planning role, and worker only executes and
+		// writes back single intents): list_facts / list_companies / list_worker_traces.
 	}
 }
 
@@ -666,17 +680,21 @@ func (t *ToolSet) MainAgentTools() []actool.CoreTool {
 		t.graphOverview(), t.listFindings(), t.listFacts(), t.nodeDetail(),
 		t.expandDigest(), // cold-digest §6.1
 		t.getWorkerOutput(), t.getWorkerTrace(), t.searchAllWorkerTraces(), t.addHint(), t.addIntent(),
-		// steer_work：人可对某条正在运行的意图(work)实时注入纠偏指令（不打断、不丢进展）。
+		// steer_work: A person can inject corrective instructions (without interrupting, without
+		// losing progress) to a running intent (work) in real time.
 		t.steerWorkTool(),
-		// set_goals：人可在运行时给本任务补一个新的最终目标（规划者据此重判是否达成）。
+		// set_goals: A new end goal can be added to the task during execution (the planner will
+		// re-judge whether it was achieved).
 		t.setGoals(),
-		// set_constraints：人可在运行时给本任务补/改操作约束（allow/deny），约束 planner/worker 的探索边界。
+		// set_constraints: Allow/deny restrictions on the task during execution, limiting the
+		// exploration boundaries of the planner/worker.
 		t.setConstraints(),
 		// asset management (handlers guard nil store internally)
 		t.insertAssets(), t.addCompanyScope(), t.listAssets(),
 		t.addFinding(), t.recordFact(),
 		t.addTaskScope(),
-		// list_untested_assets：按需查本任务范围内未测资产(类型+分页)，自行决定补测。
+		// list_untested_assets: checks untested assets within the scope of this mandate (type +
+		// page) as required, and retests at its discretion.
 		t.listUntestedAssets(),
 	}
 }

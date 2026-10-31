@@ -539,20 +539,21 @@ func TestQueryByType(t *testing.T) {
 	}
 }
 
-// TestDeleteByTaskID: 独有资产被删,与其他任务共享的资产仅解除关联(保留),host 反查正确。
+// TestDeleteByTaskID: Unique assets are deleted, assets shared with other tasks are only
+// unassociated (retained), and the host checks back correctly.
 func TestDeleteByTaskID(t *testing.T) {
 	d, av2, _ := testSetup(t)
 	defer d.Close()
 
 	const taskA = int64(90001)
 	const taskB = int64(90002)
-	// solo:仅属 taskA
+	// solo: only for taskA
 	solo, err := av2.UpsertRootDomain(UpsertRootDomainReq{Domain: "solo-del.test", TaskID: taskA})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer deleteAsset(d, solo)
-	// shared:先 taskA 再 taskB → task_ids={A,B}
+	// shared: first taskA then taskB → task_ids={A,B}
 	shared, err := av2.UpsertRootDomain(UpsertRootDomainReq{Domain: "shared-del.test", TaskID: taskA})
 	if err != nil {
 		t.Fatal(err)
@@ -562,7 +563,7 @@ func TestDeleteByTaskID(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// host 反查(删资产前):应含两个域名
+	// host Checkback (before deleting assets): must contain two domain names
 	hosts, err := av2.HostsByTask(taskA)
 	if err != nil {
 		t.Fatal(err)
@@ -578,11 +579,11 @@ func TestDeleteByTaskID(t *testing.T) {
 	if n != 1 {
 		t.Fatalf("DeleteByTaskID: 应删 1 个独有资产,实删 %d", n)
 	}
-	// solo 已删
+	// solo has been deleted
 	if a, _ := av2.GetByIDs([]int64{solo}); len(a) != 0 {
 		t.Fatalf("solo 资产应被删除")
 	}
-	// shared 保留,且 task_ids 只剩 taskB
+	// shared is retained and task_ids is left as taskB
 	sa, _ := av2.GetByIDs([]int64{shared})
 	if len(sa) != 1 {
 		t.Fatalf("shared 资产应保留")
@@ -640,7 +641,8 @@ func TestQueryByTask(t *testing.T) {
 	}
 }
 
-// 任务资产列表按页取,不再被固定条数截断:60 条资产用 25/页要能完整翻出来。
+// The task asset list is taken page by page and no longer truncated by a fixed number of lines: 60
+// assets require 25/page to be turned out completely.
 func TestQueryByTaskPaging(t *testing.T) {
 	d, av2, _ := testSetup(t)
 	defer d.Close()
@@ -739,7 +741,7 @@ func TestQueryByCompany(t *testing.T) {
 	}
 }
 
-// 企业资产列表同样按页取,不被固定条数截断。
+// The list of enterprise assets is also taken by page, not cut off by a fixed number of lines.
 func TestQueryByCompanyPaging(t *testing.T) {
 	d, av2, cs := testSetup(t)
 	defer d.Close()
@@ -754,7 +756,7 @@ func TestQueryByCompanyPaging(t *testing.T) {
 		t.Fatalf("AddScope: added=%d, errors=%v", added, errs)
 	}
 
-	// UpsertSubdomain 会顺带建根域名资产,一并清掉
+	// UpsertSubdomain will clear the root domain name assets.
 	defer d.Exec(`DELETE FROM assets WHERE root_domain = 'qbc-paging.io'`)
 
 	const n = 60
@@ -1025,11 +1027,11 @@ func TestQueryDSLInScopeMembership(t *testing.T) {
 	}
 
 	stamp := time.Now().UnixNano()
-	root := fmt.Sprintf("sc%d.invalid", stamp)           // in-scope root domain (task)
-	srcRoot := fmt.Sprintf("src%d.invalid", stamp)       // in-scope via source task
-	out := fmt.Sprintf("out%d.invalid", stamp)           // out of every scope
-	marker := fmt.Sprintf("mk%d", stamp)                 // bare-text token present in all rows
-	foreignTask := stamp + 777                           // asset produced by an unrelated task
+	root := fmt.Sprintf("sc%d.invalid", stamp)     // in-scope root domain (task)
+	srcRoot := fmt.Sprintf("src%d.invalid", stamp) // in-scope via source task
+	out := fmt.Sprintf("out%d.invalid", stamp)     // out of every scope
+	marker := fmt.Sprintf("mk%d", stamp)           // bare-text token present in all rows
+	foreignTask := stamp + 777                     // asset produced by an unrelated task
 
 	// Scope: task owns root; source task owns srcRoot; task owns an IP /24.
 	for _, sc := range []struct {
@@ -1057,7 +1059,7 @@ func TestQueryDSLInScopeMembership(t *testing.T) {
 		{"subdomain", "api." + root, root, "", "", "", marker},                        // under task root
 		{"service", "www." + root, root, "https://www." + root + "/", "", "", marker}, // service under task root
 		{"endpoint", "www." + root, root, "https://www." + root + "/a?" + marker + "=1", "GET", "", ""},
-		{"subdomain", "dev." + srcRoot, srcRoot, "", "", "", marker}, // under source-task root
+		{"subdomain", "dev." + srcRoot, srcRoot, "", "", "", marker},                                      // under source-task root
 		{"endpoint", "198.51.100.9", "198.51.100.9", "http://198.51.100.9:8080/" + marker, "GET", "", ""}, // IP-literal host, ip col empty
 		{"subdomain", "x." + out, out, "", "", "", marker},                                                // out of scope
 	}

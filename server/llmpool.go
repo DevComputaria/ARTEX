@@ -10,11 +10,13 @@ import (
 	"github.com/Autumn-27/norma/llm"
 )
 
-// LLM 轮询(故障转移)的服务端接线。设计见 docs/LLM轮询设计.md：
-//   - 全局激活配置这条路径(agent 未绑定、任务未 pin)才轮询;
-//   - 绑定/pin 的路径默认独占该配置,失败即失败(可由 llm_pool_bind_fallback 打开兜底);
-//   - 链序 = 激活配置 → 其余按 priority DESC,排除 pool_exclude 的;
-//   - 熔断状态进程级共享(s.llmHealth),重建 pool 不清空。
+// Service-side wiring for LLM query (failover). Designs are in docs/LLM query design.md:
+// - Globally activate the configuration of this path (agent not bound, task not pinned) only to
+// query;
+// - The path to the binding/pin is exclusive to this configuration by default, and fails if it
+// fails (can be turned on by llm_pool_bind_fallback);
+// - Chain = Activate configuration → Rest by priority DESC, exclude pool_exclude;
+// - Melt state process-level share (s.llmHealth), rebuild pool not emptied.
 
 // newLLMHealthRegistry builds the process-wide circuit-breaker registry, mirroring
 // state into PG so a cooling-off window survives a restart. Writes are async and

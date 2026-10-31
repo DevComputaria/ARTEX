@@ -8,7 +8,8 @@ import (
 	"github.com/Autumn-27/norma/llm"
 )
 
-// 空转回合(仅思考、无正文无工具)的识别与续跑，见 steerHooks.Stop。
+// For identification and rerun of idle loops (thinking only, no text, no tools), see
+// steerHooks.Stop.
 
 func assistantThinking(text string) llm.Message {
 	return llm.Message{Role: llm.RoleAssistant, Content: []llm.ContentBlock{
@@ -37,7 +38,8 @@ func TestIsThinkingOnlyTurn(t *testing.T) {
 			Content: []llm.ContentBlock{{Type: llm.BlockThinking, Thinking: "x"}, llm.TextBlock("  \n ")},
 		}}, true},
 		{"完全空的 assistant 回合", []llm.Message{{Role: llm.RoleAssistant}}, true},
-		// 工具结果是 user 角色，判定必须回溯到它前面那条 assistant，而不是就近误判。
+		// The tool results in a user role, which determines that it must go back to the assistant
+		// before it, rather than just near the error.
 		{"最后一条是工具结果", []llm.Message{toolUse, {
 			Role:    llm.RoleUser,
 			Content: []llm.ContentBlock{{Type: llm.BlockToolResult, ToolUseID: "t1"}},
@@ -54,7 +56,8 @@ func TestIsThinkingOnlyTurn(t *testing.T) {
 	}
 }
 
-// fakeHooks 是一个可编程的 inner HookRunner，用来验证 steerHooks 对 inner 决定的尊重。
+// fakeHooks is a programmable inner HookRunner used to verify that steerHooks respect inner
+// decisions.
 type fakeHooks struct {
 	prevent  bool
 	blocking []string
@@ -98,7 +101,7 @@ func TestSteerHooksStopNudgesEmptyTurn(t *testing.T) {
 	})
 
 	t.Run("达到上限后放行收场", func(t *testing.T) {
-		const limit = 5 // 用户把「空响应重试次数」配成 5
+		const limit = 5 // The user assigns the "number of empty response retry" to 5
 		h := steerHooks{nudges: &atomic.Int64{}, limit: limit}
 		for i := 1; i <= limit; i++ {
 			if _, blocking, _ := h.Stop(context.Background(), empty); len(blocking) != 1 {
@@ -110,7 +113,8 @@ func TestSteerHooksStopNudgesEmptyTurn(t *testing.T) {
 		}
 	})
 
-	// 「空响应重试次数」配 -1 = 关掉这层，emptyTurnNudgeLimit 解析成 0。
+	// The "Number of Empty Response Retries" is set to -1 = shut down this layer, and
+	// emptyTurnNudgeLimit is resolved to 0.
 	t.Run("配置关闭时不介入", func(t *testing.T) {
 		h := steerHooks{nudges: &atomic.Int64{}, limit: 0}
 		if _, blocking, _ := h.Stop(context.Background(), empty); blocking != nil {
@@ -138,7 +142,7 @@ func TestSteerHooksStopNudgesEmptyTurn(t *testing.T) {
 	})
 
 	t.Run("未装计数器时行为不变", func(t *testing.T) {
-		h := steerHooks{limit: defaultEmptyTurnNudges} // 例如未来其他调用点忘了传 nudges
+		h := steerHooks{limit: defaultEmptyTurnNudges} // For example, other calls to the future forgot to send nudges
 		if _, blocking, _ := h.Stop(context.Background(), empty); blocking != nil {
 			t.Fatalf("无计数器时不应注入: %v", blocking)
 		}

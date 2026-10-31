@@ -59,12 +59,12 @@ func TestEvaluateAssetGate(t *testing.T) {
 	block := []AssetInterceptRule{rule("fuzzy_domain", ".gov.cn", true)}
 	allow := []AssetInterceptRule{rule("fuzzy_domain", "example.com", true)}
 
-	// 1. 命中拦截规则 → 拒绝（拦截原因优先）。
+	// 1. Hit interception rule → Reject (interception reasons take precedence).
 	if d := EvaluateAssetGate(block, allow, []string{"www.gov.cn"}, nil, nil); d.Allowed {
 		t.Fatal("命中拦截规则应被拒绝")
 	}
 
-	// 2. 未命中拦截、有允许规则但不命中 → 拒绝（不允许）。
+	// 2. Intercept not hit, allowed rule but not hit → refused (not allowed).
 	d := EvaluateAssetGate(block, allow, []string{"foo.other.com"}, nil, nil)
 	if d.Allowed {
 		t.Fatal("有白名单且不命中应被拒绝")
@@ -73,23 +73,23 @@ func TestEvaluateAssetGate(t *testing.T) {
 		t.Fatal("拒绝应带原因")
 	}
 
-	// 3. 未命中拦截、命中允许规则 → 放行。
+	// 3. Unhit block, hit allow rule → release.
 	if d := EvaluateAssetGate(block, allow, []string{"api.example.com"}, nil, nil); !d.Allowed {
 		t.Fatal("命中白名单应放行")
 	}
 
-	// 4. 无允许规则（白名单未启用）→ 未命中拦截即放行。
+	// 4. No allow rules (whitelist not enabled) → blocked and released without hit.
 	if d := EvaluateAssetGate(block, nil, []string{"foo.other.com"}, nil, nil); !d.Allowed {
 		t.Fatal("无白名单时未命中拦截应放行")
 	}
 
-	// 5. 允许规则全部禁用 → 视为白名单未启用，放行。
+	// 5. Allow rules all disabled → Consider whitelisting not enabled, leave.
 	disabledAllow := []AssetInterceptRule{rule("fuzzy_domain", "example.com", false)}
 	if d := EvaluateAssetGate(nil, disabledAllow, []string{"foo.other.com"}, nil, nil); !d.Allowed {
 		t.Fatal("白名单全禁用时应放行")
 	}
 
-	// 6. 拦截优先于允许：同一目标既命中拦截又命中允许 → 拒绝。
+	// 6. Intercept over allow: the same target is both intercepted and allowed → denied.
 	if d := EvaluateAssetGate(
 		[]AssetInterceptRule{rule("fuzzy_domain", ".gov.cn", true)},
 		[]AssetInterceptRule{rule("fuzzy_domain", ".gov.cn", true)},
@@ -100,7 +100,8 @@ func TestEvaluateAssetGate(t *testing.T) {
 }
 
 func TestAssetInterceptCandidates(t *testing.T) {
-	// 只带 URL 的服务资产：host 应被拆出并归入域名候选，从而被 fuzzy_domain 命中。
+	// Service assets with only URLs: host should be decomposed and placed in the domain name
+	// candidate, thus being hit by fuzzy_domain.
 	a := &Asset{Type: "service", URL: "https://portal.beijing.gov.cn:8443/app"}
 	domains, _, urls := a.interceptCandidates()
 	if len(urls) != 1 || urls[0] != a.URL {
@@ -120,7 +121,8 @@ func TestAssetInterceptCandidates(t *testing.T) {
 		t.Fatalf("仅带 URL 的政府服务资产应被 fuzzy_domain 命中, rule=%+v", r)
 	}
 
-	// URL host 是 IP 时应归入 IP 候选，可被 CIDR 命中。
+	// The URL host is the IP that should be included in the IP candidates, which can be hit by
+	// CIDR.
 	b := &Asset{Type: "service", URL: "http://10.1.2.3/x"}
 	_, ips, _ := b.interceptCandidates()
 	if r, _, ok := MatchAssetInterceptRules([]AssetInterceptRule{rule("cidr", "10.0.0.0/8", true)}, nil, ips, nil); !ok {
