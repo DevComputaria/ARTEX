@@ -15,7 +15,9 @@ services:
     restart: unless-stopped
 
   artex:
-    image: tomicdd/artex:${ARTEX_TAG:-latest}
+    build:
+      context: .
+      dockerfile: Dockerfile
     depends_on:
       postgres:
         condition: service_healthy
