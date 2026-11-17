@@ -190,7 +190,9 @@ func smokeTest(bin string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, bin, "-h")
+	// nosemgrep: dangerous-exec-command -- bin is the staged file whose SHA-256
+	// was verified immediately above; no shell is involved.
+	cmd := exec.CommandContext(ctx, bin, "-h") // nosemgrep
 	cmd.Env = append(os.Environ(), smokeEnv+"=1")
 	out, err := cmd.CombinedOutput()
 	if ctx.Err() != nil {

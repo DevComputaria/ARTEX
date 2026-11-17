@@ -356,9 +356,9 @@ func TestNotifyChannelAPICreateValidation(t *testing.T) {
 	}{
 		{"Type of illegal", map[string]any{"name": "x", "kind": "nope", "config": map[string]any{}}, "Channel type invalid"},
 		{"Missing name", map[string]any{"kind": notify.KindDingTalk, "config": map[string]any{"webhook": "https://e.com/h"}}, "Can not open message"},
-		{"missing webhook", map[string]any{"name": "x", "kind": notify.KindDingTalk, "config": map[string]any{}}, "Webhook"},
-		{"Webhook protocol is illegal", map[string]any{"name": "x", "kind": notify.KindDingTalk, "config": map[string]any{"webhook": "file:///etc/passwd"}}, "Webhook address is invalid"},
-		{"Model illegal", map[string]any{"name": "x", "kind": notify.KindDingTalk, "mode": "sometimes", "config": map[string]any{"webhook": "https://e.com/h"}}, "The push mode is invalid."},
+		{"missing webhook", map[string]any{"name": "x", "kind": notify.KindDingTalk, "config": map[string]any{}}, "missing webhook"},
+		{"Webhook protocol is illegal", map[string]any{"name": "x", "kind": notify.KindDingTalk, "config": map[string]any{"webhook": "file:///etc/passwd"}}, "invalid webhook address"},
+		{"Model illegal", map[string]any{"name": "x", "kind": notify.KindDingTalk, "mode": "sometimes", "config": map[string]any{"webhook": "https://e.com/h"}}, "push mode is invalid"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -495,7 +495,7 @@ func TestNotifyStatusChangeDelivery(t *testing.T) {
 	found := false
 	for i := 0; i < hook.count(); i++ {
 		text := markdownText(t, hook.body(t, i))
-		if strings.Contains(text, "State change") && strings.Contains(text, "Fixed") {
+		if strings.Contains(text, "Status change") && strings.Contains(text, "Fixed") {
 			found = true
 		}
 	}

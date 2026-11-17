@@ -1,9 +1,9 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:17.7-alpine@sha256:bb377b7239d2774ac8cc76f481596ce96c5a6b5e9d141f6d0a0ee371a6e7c0f2
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-artex}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?请在 .env 设置 POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no arquivo .env}
       POSTGRES_DB: ${POSTGRES_DB:-artex}
     volumes:
       - pgdata:/var/lib/postgresql/data

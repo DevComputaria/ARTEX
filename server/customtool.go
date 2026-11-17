@@ -398,7 +398,9 @@ func execPython(ctx context.Context, interp, key, code string, params map[string
 
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	c := exec.CommandContext(runCtx, interp, tmp)
+	// nosemgrep: dangerous-exec-command -- this is the explicit custom Python
+	// tool feature; interp is an administrator setting and tmp is created here.
+	c := exec.CommandContext(runCtx, interp, tmp) // nosemgrep
 	c.Dir = workDir
 	c.Env = append(os.Environ(), sessionEnv...) // Session Agent env
 	for k, v := range params {                  // Mirror the scale parameters to TOOL_<NAME>

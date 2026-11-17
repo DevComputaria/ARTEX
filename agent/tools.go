@@ -525,6 +525,44 @@ func (t *ToolSet) graphOverviewData() map[string]any {
 		{
 			m := map[string]any{}
 			if !t.coverageDisabled {
+				if scopeRows, err := t.as.ListTaskScopeWithSources(t.taskID); err == nil {
+					scope := make([]map[string]any, 0, len(scopeRows))
+					for _, row := range scopeRows {
+						entry := map[string]any{
+							"kind":      row.Kind,
+							"source":    row.Source,
+							"reason":    row.Reason,
+							"inherited": row.TaskID != t.taskID,
+						}
+						switch {
+						case row.Domain != "":
+							entry["value"] = row.Domain
+						case row.Net != "":
+							entry["value"] = row.Net
+						case row.Value != "":
+							entry["value"] = row.Value
+						case row.CompanyID != nil:
+							entry["company_id"] = *row.CompanyID
+							entry["value"] = row.CompanyName
+							if t.cs != nil {
+								if rules, err := t.cs.GetScope(*row.CompanyID); err == nil {
+									expanded := make([]map[string]any, 0, len(rules))
+									keywords := make([]string, 0)
+									for _, rule := range rules {
+										expanded = append(expanded, map[string]any{"kind": rule.Kind, "value": rule.Raw})
+										if rule.Kind == "keyword" {
+											keywords = append(keywords, rule.Raw)
+										}
+									}
+									entry["company_scope"] = expanded
+									entry["company_keywords"] = keywords
+								}
+							}
+						}
+						scope = append(scope, entry)
+					}
+					m["scope"] = scope
+				}
 				if cov, err := t.as.TaskCoverageWithSources(t.taskID); err == nil {
 					m["denominator"] = cov.Denominator
 					m["tested"] = cov.Tested

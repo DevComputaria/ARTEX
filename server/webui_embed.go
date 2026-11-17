@@ -27,7 +27,9 @@ func (s *Server) webuiHandler() http.Handler {
 		panic(err)
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		p := strings.TrimPrefix(path.Clean(r.URL.Path), "/")
+		// Anchor the request path at the embedded filesystem root before cleaning
+		// it so parent-directory segments can never escape that root.
+		p := strings.TrimPrefix(path.Clean("/"+strings.Trim(r.URL.Path, "/")), "/")
 		if p == "" {
 			p = "index.html"
 		}

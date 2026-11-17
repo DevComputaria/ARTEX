@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Autumn-27/artex/config"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	_ "github.com/jackc/pgx/v5/stdlib" // pgx database/sql driver ("pgx")
 )
@@ -123,7 +124,11 @@ func ensureDatabase(dsn string) error {
 	var exists bool
 	_ = admin.QueryRow(`SELECT true FROM pg_database WHERE datname=$1`, dbName).Scan(&exists)
 	if !exists {
-		if _, err := admin.Exec(`CREATE DATABASE "` + dbName + `"`); err != nil {
+		// PostgreSQL does not accept bind parameters for identifiers. Sanitize the
+		// database name as an identifier before composing this administrative DDL.
+		quotedDBName := pgx.Identifier{dbName}.Sanitize()
+		// nosemgrep: gosql-sqli -- quotedDBName is produced by pgx.Identifier.Sanitize.
+		if _, err := admin.Exec(`CREATE DATABASE ` + quotedDBName); err != nil {
 			return fmt.Errorf("create database %q: %w", dbName, err)
 		}
 	}

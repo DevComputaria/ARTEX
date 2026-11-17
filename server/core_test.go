@@ -3,7 +3,9 @@ package server
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -23,6 +25,24 @@ func TestCoreTaskLifecyclePG(t *testing.T) {
 		t.Skipf("postgres unavailable (%v) — skipping", err)
 	}
 	defer m.Close()
+	// This lifecycle test exercises the local fallback goal seeding. Other tests
+	// may leave a default LLM profile in the shared test database, which would
+	// make this test perform an external provider call and become order-dependent.
+	var activeProfileID int64
+	activeProfileErr := m.pg.QueryRow(`SELECT id FROM llm_profiles WHERE is_default LIMIT 1`).Scan(&activeProfileID)
+	if activeProfileErr != nil && !errors.Is(activeProfileErr, sql.ErrNoRows) {
+		t.Fatalf("read active LLM profile: %v", activeProfileErr)
+	}
+	if activeProfileErr == nil {
+		if _, err := m.pg.Exec(`UPDATE llm_profiles SET is_default=false WHERE id=$1`, activeProfileID); err != nil {
+			t.Fatalf("deactivate LLM profile for test: %v", err)
+		}
+		defer func() {
+			if _, err := m.pg.Exec(`UPDATE llm_profiles SET is_default=true WHERE id=$1`, activeProfileID); err != nil {
+				t.Errorf("restore active LLM profile: %v", err)
+			}
+		}()
+	}
 	td := t.TempDir()
 	s := New(context.Background(), m, td, td, td)
 	h := s.Handler()

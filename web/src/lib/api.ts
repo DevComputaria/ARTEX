@@ -50,6 +50,7 @@ import type {
   InterceptApprovalFilter,
   InterceptApprovalRow,
   InterceptDetail,
+  InterceptExecution,
   InterceptPending,
   InterceptRule,
   JudgeConfig,
@@ -1235,10 +1236,10 @@ export const api = {
   interceptGetOne: (id: number) => get<InterceptPending>(`/intercept/pending/${id}`),
   interceptDecide: (id: number, decision: "allowed" | "denied") =>
     post<{ ok: boolean }>(`/intercept/pending/${id}/decide`, { decision }),
-  interceptExecution: (id: number, conversationId?: number) =>
-    get<import("@/lib/types").InterceptExecution>(
-      `/intercept/history/${id}/execution${conversationId ? `?conversation=${conversationId}` : ""}`,
-    ),
+  interceptExecution: (id: number, conversationId?: number) => {
+    const conversationQuery = conversationId ? `?conversation=${conversationId}` : "";
+    return get<InterceptExecution>(`/intercept/history/${id}/execution${conversationQuery}`);
+  },
   interceptDetail: (id: number) => get<InterceptDetail>(`/intercept/history/${id}`),
   interceptHistory: () => get<{ items: InterceptApprovalRow[] }>("/intercept/history").then((r) => arr(r.items)),
   interceptHistoryPage: (page = 1, size = 20, filter: InterceptApprovalFilter = {}) =>

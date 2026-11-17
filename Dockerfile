@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1
 
 FROM --platform=$BUILDPLATFORM node:22-bookworm-slim AS frontend
+ENV NEXT_TELEMETRY_DISABLED=1
 WORKDIR /src/web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
@@ -32,17 +33,22 @@ COPY --from=frontend /usr/local/ /usr/local/
 # Reinstall playwright (provides browser management), loaded with --with-deps preloading chromium
 # and its system dependencies, so that the container-based MCP/CLI is available on first startup, no
 # longer running npx-download.
-RUN npm install -g @playwright/mcp@latest @playwright/cli@latest playwright@latest \
+RUN npm install -g @playwright/mcp@0.0.85 @playwright/cli@0.1.24 playwright@1.65.1 \
     && playwright-cli --help \
     && playwright install --with-deps chromium \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=builder /out/artex /app/artex
 COPY docker-entrypoint.sh /app/docker-entrypoint.sh
-RUN chmod 0755 /app/artex /app/docker-entrypoint.sh
 COPY skills/ /app/skills/
+RUN groupadd --gid 1000 artex \
+    && useradd --uid 1000 --gid artex --home-dir /app --shell /usr/sbin/nologin artex \
+    && mkdir -p /app/data \
+    && chmod 0755 /app/artex /app/docker-entrypoint.sh \
+    && chown -R artex:artex /app
 # data/(SQLite + jwt.key) persistence point
 VOLUME ["/app/data"]
 EXPOSE 8787 8788
+USER artex
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
 CMD ["-addr", ":8787", "-proxy", ":8788"]
