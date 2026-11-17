@@ -52,7 +52,7 @@ func (i Item) Title() string {
 	if i.VulnClass != "" {
 		return i.VulnClass
 	}
-	return "(未命名漏洞)"
+	return "(unnamed vulnerability)"
 }
 
 // Message is the entire content sent by a channel.

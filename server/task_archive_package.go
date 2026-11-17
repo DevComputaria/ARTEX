@@ -503,7 +503,7 @@ func stageTaskArchivePackageDelete(archivePath string, archiveID int64) (string,
 	staged := archivePath + fmt.Sprintf(".deleting-%d", archiveID)
 	if _, err := os.Lstat(staged); err == nil {
 		if _, originalErr := os.Lstat(archivePath); originalErr == nil {
-			return staged, false, errors.New("归档包原文件和删除暂存文件同时存在")
+			return staged, false, errors.New("Archiving the original file and deleting the suspense file exist simultaneously")
 		} else if !os.IsNotExist(originalErr) {
 			return staged, false, originalErr
 		}
@@ -583,7 +583,7 @@ func writeTaskArchivePackage(path, payloadDir string, snapshot *pgdb.TaskArchive
 			// Skipping rather than a complete package fails: the link target is not read (lstat,
 			// does not cross the directory tree), nor is any symlink entry written; if the link
 			// points to a tree, the target file itself is still archived separately.
-			log.Printf("[task-archive] 跳过符号链接（归档不支持，不影响其它文件）：%s", current)
+			log.Printf("[task-archive] Skip the symbolic link (archiving is not supported and does not affect other documents): %s", current)
 			return nil
 		}
 		header, err := tar.FileInfoHeader(info, "")

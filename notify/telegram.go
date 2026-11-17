@@ -38,14 +38,14 @@ func (telegramChannel) DestinationKeys() []string { return []string{"base_url"} 
 
 func (telegramChannel) Validate(cfg map[string]any) error {
 	if cfgString(cfg, "bot_token") == "" {
-		return errors.New("缺少 Bot Token")
+		return errors.New("Missing Bot Token")
 	}
 	if cfgString(cfg, "chat_id") == "" {
-		return errors.New("缺少 Chat ID")
+		return errors.New("Missing Chat ID")
 	}
 	if base := cfgString(cfg, "base_url"); base != "" {
 		if err := validateHTTPURL(base); err != nil {
-			return fmt.Errorf("API 地址无效: %w", err)
+			return fmt.Errorf("API Invalid address: %w", err)
 		}
 	}
 	return nil
@@ -76,7 +76,7 @@ func (c telegramChannel) Send(ctx context.Context, cfg map[string]any, m Message
 		Description string `json:"description"`
 	}
 	if err := json.Unmarshal(raw, &res); err != nil {
-		return 0, fmt.Errorf("解析 Telegram 响应失败: %w (%s)", err, snippet(raw))
+		return 0, fmt.Errorf("Parsing Telegram response failed: %w (%s)", err, snippet(raw))
 	}
 	if res.OK {
 		return kept, nil
@@ -85,9 +85,9 @@ func (c telegramChannel) Send(ctx context.Context, cfg map[string]any, m Message
 	// token error, 403 blacked out, 404 chat does not exist) are configuration issues that will not
 	// heal themselves.
 	if res.ErrorCode == 429 {
-		return 0, fmt.Errorf("Telegram 限流: %s", res.Description)
+		return 0, fmt.Errorf("Telegram rate limit: %s", res.Description)
 	}
-	return 0, Permanent(fmt.Errorf("Telegram 返回错误 %d: %s", res.ErrorCode, res.Description))
+	return 0, Permanent(fmt.Errorf("Telegram returns error %d: %s", res.ErrorCode, res.Description))
 }
 
 // telegramEndpoint Compile the sendMessage address. Base_url is used for the official API if left
@@ -104,7 +104,7 @@ func telegramEndpoint(cfg map[string]any) (string, error) {
 	if err != nil {
 		// Not transmitted err: The address contains a Bot Token, and even the addr should not be
 		// returned at this time.
-		return "", fmt.Errorf("拼接 API 地址失败（API 地址：%s）", redactRequestTarget(base))
+		return "", fmt.Errorf("Spelling API address failed (API address: %s)", redactRequestTarget(base))
 	}
 	return u.String(), nil
 }
@@ -119,7 +119,7 @@ func telegramHTML(m Message) (string, int) {
 		// (runeSize).
 		footer := ""
 		if m.HomeURL != "" {
-			footer = fmt.Sprintf("\n\n<a href=\"%s\">在平台中查看全部</a>", telegramEscapeAttr(m.HomeURL))
+			footer = fmt.Sprintf("\n\n<a href=\"%s\">View all findings in ARTEX</a>", telegramEscapeAttr(m.HomeURL))
 		}
 		kept := packItemCount(m.Items, telegramTextLimit, telegramReservedRunes, footer, runeSize, func(it Item, idx int) string {
 			return telegramBatchLine(it, idx+1)
@@ -138,20 +138,20 @@ func telegramHTML(m Message) (string, int) {
 	}
 	it := m.Items[0]
 	if it.IsStatusChange() {
-		b.WriteString(fmt.Sprintf("\n<b>状态变更</b>：%s → %s",
+		b.WriteString(fmt.Sprintf("\n<b>Status change</b>: %s → %s",
 			telegramEscape(StatusLabel(it.FromStatus)), telegramEscape(StatusLabel(it.ToStatus))))
 	}
 	if it.VulnClass != "" && it.VulnClass != it.Title() {
-		b.WriteString("\n<b>类型</b>：" + telegramEscape(it.VulnClass))
+		b.WriteString("\n<b>Type</b>: " + telegramEscape(it.VulnClass))
 	}
 	if a := assetLine(it.Assets, maxAssetsShown); a != "" {
-		b.WriteString("\n<b>资产</b>：" + telegramEscape(a))
+		b.WriteString("\n<b>Assets</b>: " + telegramEscape(a))
 	}
 	if s := OneLine(it.Summary, maxSummaryRunes); s != "" {
-		b.WriteString("\n<b>摘要</b>：" + telegramEscape(s))
+		b.WriteString("\n<b>Summary</b>: " + telegramEscape(s))
 	}
 	if it.DetailURL != "" {
-		b.WriteString(fmt.Sprintf("\n\n<a href=\"%s\">查看详情</a>", telegramEscapeAttr(it.DetailURL)))
+		b.WriteString(fmt.Sprintf("\n\n<a href=\"%s\">View details</a>", telegramEscapeAttr(it.DetailURL)))
 	}
 	return TruncateHTML(b.String(), telegramTextLimit), 1
 }
@@ -172,12 +172,12 @@ func telegramBatchLine(it Item, idx int) string {
 // number of rows in the batch — otherwise the reader would think that the number written for the
 // message header is the total number.
 func telegramBatchTitle(m Message, items []Item, total int) string {
-	title := fmt.Sprintf("漏洞汇总 · 共 %d 条", total)
+	title := fmt.Sprintf("Vulnerability summary · %d total", total)
 	if extra := total - len(items); extra > 0 {
-		title += fmt.Sprintf("（显示前 %d 条，其余 %d 条下一条继续）", len(items), extra)
+		title += fmt.Sprintf(" (showing %d; %d continue in the next message)", len(items), extra)
 	}
 	if m.WindowMinutes > 0 {
-		title = fmt.Sprintf("近 %d 分钟 · %s", m.WindowMinutes, title)
+		title = fmt.Sprintf("Last %d minutes · %s", m.WindowMinutes, title)
 	}
 	return title
 }

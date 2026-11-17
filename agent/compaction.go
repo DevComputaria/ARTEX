@@ -461,7 +461,7 @@ func buildCompressionInput(g *coldGraph, b block, nodeByID map[int64]*db.Node) s
 		memberSet[m] = true
 	}
 	var sb strings.Builder
-	sb.WriteString("【成员节点（要压缩的）】：\n")
+	sb.WriteString("[member node (to be compressed): \n")
 	for _, m := range b.Members {
 		n := nodeByID[m]
 		kind := "fact"
@@ -484,18 +484,18 @@ func buildCompressionInput(g *coldGraph, b block, nodeByID map[int64]*db.Node) s
 	for _, m := range b.Members {
 		for _, to := range g.children[m] {
 			if memberSet[to] {
-				edgeLines = append(edgeLines, fmt.Sprintf("- #%d 产出/派生→ #%d", m, to))
+				edgeLines = append(edgeLines, fmt.Sprintf("- # %d Output/origin #%d", m, to))
 			}
 		}
 	}
 	if len(edgeLines) > 0 {
-		sb.WriteString("\n【成员之间的血缘边（父→子）】：\n")
+		sb.WriteString("\n: \n")
 		sort.Strings(edgeLines)
 		sb.WriteString(strings.Join(edgeLines, "\n"))
 		sb.WriteByte('\n')
 	}
 	if len(b.Anchors) > 0 {
-		sb.WriteString("\n【共同父 / 上下文锚（不是成员，只用于理解这些结果从哪个意图探出）】：\n")
+		sb.WriteString("\n[Common parent / context anchor (not a member, used only to understand which intent these results come from)]: \n")
 		for _, a := range b.Anchors {
 			n := nodeByID[a]
 			state := ""
@@ -529,19 +529,19 @@ func (c *Compactor) compress(ctx context.Context, g *coldGraph, b block, nodeByI
 }
 
 // compressionSystemPrompt is the §4 body prompt.
-const compressionSystemPrompt = `你在压缩一组【彼此关联】的探索节点，产出一段综合结论(body)，供规划者快速掌握"这一片已经探明了什么"。
+const compressionSystemPrompt = `You are compressing a set of [interrelated] discovery nodes to produce a body for the planner to quickly grasp "what this piece has discovered".
 
-输入是一个连通子图：
-- 节点：每条是一个意图或事实的 summary（一句话），带 id、类型(intent/fact)、state、confidence(若有)。
-- 关系：节点之间的血缘边（A 派生自 B / A 产出 B），说明它们如何串联。
-- 若节点间没有直接血缘边、但同属一个上游意图（会另给出该上游意图作为"共同父 #p"），则按"这个意图（#p）探到了什么"来综合它们——共同父只是上下文锚、不是要压缩的成员。
+Enter a contact subchart:
+- Node: Each entry is a summary (one sentence) of the intent or fact, with id, type (intent/fact), state, and confidence (if any).
+- Relationships: The bloodline between the nodes (A is derived from B/A output B) indicating how they are associated.
+- If there is no direct bloodline between the nodes, but they belong to a common upstream intent (which will be given as "common parent #p"), they are synthesized by what this intent (#p) finds — the common parent is just a context anchor, not a member to compress.
 
-据此写一段 body：
-1. 综合、不罗列：顺着关系把因果串起来（哪个事实催生哪个意图、哪条意图产出了哪个结论），讲成"这一片探索得出了什么"，不要把每条 summary 抄一遍。
-2. 保留区分度：彼此不同的结论分别说清，别揉成一句笼统的话。
-3. 保留证据强度：带 confidence 的结论标出 observed / inferred；inferred 的否定/存疑结论要点明它只是推断、可复核，别写成定论。
-4. 带上 id：每条结论后标注来源节点 id（如"…（#12,#28）"），让规划者能按 id 还原原节点。
-5. 正向陈述、只写输入里有的：不脑补、不引入输入中没有的判断。
-6. 长度随内容自适应：结论少就短，多且互不相同就写够——但整体显著短于所有输入 summary 的总和。
+Here's a paragraph:
+1. Combining, not listing: Linking causes and consequences along the lines (which fact leads to which intent and which incent produces which conclusion) says "What this piece of exploration leads to," and don't copy every submary.
+2. Reservation of the distinction: The different conclusions are stated separately and not in general terms.
+3. Keep the strength of evidence: conclusions with confidence are marked as observed/inferred; negative/suspicious conclusions of inferred should point out that they are merely deductive, verifiable, and not written as conclusions.
+4. Take id: Mark the source node after each conclusion (e. g. "...(#12,#28)") to allow the planner to press id to restore the original node.
+5. You are in the process of writing what's in the statement: not thinking, not introducing judgement that is not in the input.
+6. The length adapts to the content: conclusions are shorter, more varied and sufficient - but the whole is significantly shorter than the sum of all input submary.
 
-只输出 body 正文本身。`
+Just output body text itself.`

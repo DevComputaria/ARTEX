@@ -78,10 +78,10 @@ func blockInternalDial(_, address string, _ syscall.RawConn) error {
 	}
 	ip := net.ParseIP(host)
 	if ip == nil {
-		return fmt.Errorf("无法解析目标地址 %q", host)
+		return fmt.Errorf("cannot resolve target address %q", host)
 	}
 	if isBlockedDialIP(ip) {
-		return fmt.Errorf("拒绝投递到本机/链路本地地址 %s（如确需投递到本机服务，设置 %s=1）", ip, AllowLocalTargetsEnv)
+		return fmt.Errorf("Refusal to deliver to local home address %s (if it is necessary to deliver on-board service, settings %s=1)", ip, AllowLocalTargetsEnv)
 	}
 	return nil
 }
@@ -115,10 +115,10 @@ var httpClient = &http.Client{
 	Transport: notifyTransport,
 	CheckRedirect: func(req *http.Request, via []*http.Request) error {
 		if len(via) >= 5 {
-			return errors.New("重定向次数过多")
+			return errors.New("Too often reoriented")
 		}
 		if len(via) > 0 && req.URL.Host != via[0].URL.Host {
-			return fmt.Errorf("拒绝跨主机重定向（%s → %s）", via[0].URL.Host, req.URL.Host)
+			return fmt.Errorf("Refuse trans-host redirection (%s_%s)", via[0].URL.Host, req.URL.Host)
 		}
 		return nil
 	},
@@ -143,7 +143,7 @@ func doJSON(ctx context.Context, method, url string, headers map[string]string, 
 		if err != nil {
 			// Serialization failures are local bugs (configuration field type incorrect) and will
 			// not improve even after retrying.
-			return nil, Permanent(fmt.Errorf("构造请求体失败: %w", err))
+			return nil, Permanent(fmt.Errorf("build request body: %w", err))
 		}
 		body = bytes.NewReader(raw)
 	}
@@ -152,7 +152,7 @@ func doJSON(ctx context.Context, method, url string, headers map[string]string, 
 		// URL invalid - usually a user typed the address incorrectly and is considered a permanent
 		// failure. Here too, it is not possible to pass on the error text of err:url.Parse
 		// containing the full address.
-		return nil, Permanent(fmt.Errorf("请求地址非法: %s", redactRequestTarget(url)))
+		return nil, Permanent(fmt.Errorf("Request address: %s", redactRequestTarget(url)))
 	}
 	if payload != nil {
 		req.Header.Set("Content-Type", "application/json; charset=utf-8")
@@ -172,12 +172,12 @@ func doJSON(ctx context.Context, method, url string, headers map[string]string, 
 		// line to four places: last_error of notification_deliveries (in plaintext), the response
 		// of the delivery history interface (**a mask that bypasses channel configuration**), the
 		// service-side log, and the 502 text that the test interface sends back to the front-end.
-		return nil, fmt.Errorf("请求失败: %s", redactTransportError(err))
+		return nil, fmt.Errorf("Request failed: %s", redactTransportError(err))
 	}
 	defer resp.Body.Close()
 	raw, readErr := io.ReadAll(io.LimitReader(resp.Body, respBodyLimit))
 	if readErr != nil {
-		return nil, fmt.Errorf("读取响应失败: %w", readErr)
+		return nil, fmt.Errorf("Failed to read response: %w", readErr)
 	}
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		return raw, nil
@@ -185,12 +185,12 @@ func doJSON(ctx context.Context, method, url string, headers map[string]string, 
 	// 429 (rate limiting) and 408 (timeout) are worth retrying; the remaining 4xx are
 	// configuration or permission issues, and there is no point in trying again.
 	if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusRequestTimeout {
-		return nil, fmt.Errorf("对方限流或超时 (HTTP %d): %s", resp.StatusCode, snippet(raw))
+		return nil, fmt.Errorf("(HTTP %d: %s", resp.StatusCode, snippet(raw))
 	}
 	if resp.StatusCode >= 500 {
-		return nil, fmt.Errorf("对方服务异常 (HTTP %d): %s", resp.StatusCode, snippet(raw))
+		return nil, fmt.Errorf("Intersect service abnormal (HTTP %d): %s", resp.StatusCode, snippet(raw))
 	}
-	return nil, Permanent(fmt.Errorf("对方拒绝请求 (HTTP %d): %s", resp.StatusCode, snippet(raw)))
+	return nil, Permanent(fmt.Errorf("Request denied (HTTP %d): %s", resp.StatusCode, snippet(raw)))
 }
 
 // snippet The response body is compressed into a short line of text for error messages. The
@@ -220,7 +220,7 @@ func snippet(raw []byte) string {
 func redactRequestTarget(raw string) string {
 	u, err := url.Parse(raw)
 	if err != nil || u.Host == "" {
-		return "(地址不可解析)"
+		return "(Address insoluble)"
 	}
 	return u.Scheme + "://" + u.Host + "/…"
 }
@@ -242,7 +242,7 @@ func redactTransportError(err error) string {
 		if uerr.Err != nil {
 			return fmt.Sprintf("%s %s: %s", uerr.Op, host, uerr.Err)
 		}
-		return fmt.Sprintf("%s %s: 未知错误", uerr.Op, host)
+		return fmt.Sprintf("%s %s: unknown error", uerr.Op, host)
 	}
 	// Non-*url.Errors (such as errors returned by redirect policies) may also be addressed,
 	// uniformly out of sensitivity.

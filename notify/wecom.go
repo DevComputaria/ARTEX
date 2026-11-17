@@ -36,10 +36,10 @@ func (weComChannel) DestinationKeys() []string { return []string{"webhook"} }
 func (weComChannel) Validate(cfg map[string]any) error {
 	hook := cfgString(cfg, "webhook")
 	if hook == "" {
-		return errors.New("缺少 Webhook 地址")
+		return errors.New("missing webhook address")
 	}
 	if err := validateHTTPURL(hook); err != nil {
-		return fmt.Errorf("Webhook 地址无效: %w", err)
+		return fmt.Errorf("invalid webhook address: %w", err)
 	}
 	return nil
 }
@@ -65,16 +65,16 @@ func (c weComChannel) Send(ctx context.Context, cfg map[string]any, m Message) (
 		ErrMsg  string `json:"errmsg"`
 	}
 	if err := json.Unmarshal(raw, &res); err != nil {
-		return 0, fmt.Errorf("解析企业微信响应失败: %w (%s)", err, snippet(raw))
+		return 0, fmt.Errorf("Parsing WeCom response failed: %w (%s)", err, snippet(raw))
 	}
 	if res.ErrCode != 0 {
 		// 45009 is an interface call over the limit—the platform's rate_per_min window will scroll,
 		// and retry after avoidance is effective, so it is explicitly classified as retryable.
 		if res.ErrCode == 45009 {
-			return 0, fmt.Errorf("企业微信限流 %d: %s", res.ErrCode, res.ErrMsg)
+			return 0, fmt.Errorf("WeCom rate limit %d: %s", res.ErrCode, res.ErrMsg)
 		}
 		// 93000 is a webhook key invalid — permanently failed, retry will not heal.
-		return 0, Permanent(fmt.Errorf("企业微信返回错误 %d: %s", res.ErrCode, res.ErrMsg))
+		return 0, Permanent(fmt.Errorf("WeCom returns error %d: %s", res.ErrCode, res.ErrMsg))
 	}
 	return kept, nil
 }

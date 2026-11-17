@@ -42,7 +42,7 @@ func enableNoa(opts *agentcore.Options, enabled func() bool, archiveRoot, sessio
 		OnWarn:         onWarn,
 	}); err != nil {
 		if onWarn != nil {
-			onWarn("noa 压缩启用失败,回退内置压缩:" + err.Error())
+			onWarn("Noa compression enabled failed, retreated build-in compression:" + err.Error())
 		}
 		return
 	}

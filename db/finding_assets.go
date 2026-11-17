@@ -190,7 +190,7 @@ FROM findings f LEFT JOIN tasks t ON f.task_id = t.id`+where, args...)
 	// Counting: A row of discoveries up the chain of its ancestors for each asset, collects the key
 	// collection after weighting and then +1s it one by one, so that the parent node does not
 	// double count because a row of discoveries has multiple child assets hanging.
-	unassigned := &FindingAssetNode{Key: FindingUnassignedAsset, Kind: "none", Label: "未关联资产"}
+	unassigned := &FindingAssetNode{Key: FindingUnassignedAsset, Kind: "none", Label: "_Other Organiser"}
 	touched := map[string]bool{}
 	for _, h := range hits {
 		clear(touched)
@@ -574,7 +574,7 @@ func (d *DB) attachCompanyNodes(nodes map[string]*FindingAssetNode, parentOf map
 			continue
 		}
 		if name == "" {
-			name = "企业 #" + strconv.FormatInt(id, 10)
+			name = "Enterprise#" + strconv.FormatInt(id, 10)
 		}
 		nodes[key] = &FindingAssetNode{Key: key, Kind: "company", Label: name, CompanyID: id}
 	}

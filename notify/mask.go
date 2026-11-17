@@ -74,9 +74,9 @@ type ErrDestinationChangedWithoutCredentials struct {
 }
 
 func (e *ErrDestinationChangedWithoutCredentials) Error() string {
-	return "目标地址（" + strings.Join(e.Changed, "、") + "）已变更，请同时重新填写凭据字段（" +
-		strings.Join(e.Missing, "、") + "）：填入新值，或显式留空表示不再需要凭据。" +
-		"原凭据只对旧地址有效，继续沿用等于把它交给新地址。"
+	return "Target Address(s)" + strings.Join(e.Changed, "、") + ") has been changed and please also refill the supporting field (" +
+		strings.Join(e.Missing, "、") + ": Enter a new value, or a visible blank indicates that there is no longer any need for supporting evidence." +
+		"The original evidence was valid only for the old address and its continuation would be equivalent to handing it over to the new address."
 }
 
 // PrepareConfigUpdate consolidates channel configuration and handles the security-sensitive "target
@@ -111,7 +111,7 @@ func (e *ErrDestinationChangedWithoutCredentials) Error() string {
 func PrepareConfigUpdate(kind string, stored, incoming map[string]any) (map[string]any, error) {
 	channel, ok := Get(kind)
 	if !ok {
-		return nil, fmt.Errorf("渠道类型 %q 未注册", kind)
+		return nil, fmt.Errorf("Channel type %q Not registered", kind)
 	}
 	secrets := channel.SecretKeys()
 	destinations := channel.DestinationKeys()
@@ -189,7 +189,7 @@ func rejectMaskedInContainers(incoming map[string]any, secretKeys []string) erro
 			continue
 		}
 		if strings.Contains(string(encoded), MaskedPrefix) {
-			return fmt.Errorf("字段 %s 的内容里含掩码标记 %q：该字段只能整体留空表示沿用、或整体提交新值，不能在结构体内部夹带掩码占位",
+			return fmt.Errorf("Field %s contains a mask mark %q: the field can only be left empty as a whole to indicate that new values are used, or submitted as a package, and cannot have a mask in the inner frame of the structure",
 				key, MaskedPrefix)
 		}
 	}
