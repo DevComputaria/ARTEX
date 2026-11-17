@@ -23,7 +23,7 @@ cd /d "%~dp0"
 
 set "BIN=artex.exe"
 if not exist "%BIN%" (
-	echo [artex] 找不到可执行文件 %BIN% 1>&2
+	echo [artex] executavel nao encontrado: %BIN% 1>&2
 	exit /b 1
 )
 
@@ -36,18 +36,18 @@ set /a delay=1
 set "code=!ERRORLEVEL!"
 
 if "!code!"=="0" (
-	echo [artex] 正常退出
+	echo [artex] encerrado normalmente
 	exit /b 0
 )
 
 if "!code!"=="%RESTART_CODE%" (
 	rem Update/rollback ready: After rebooting, artex will complete the reload at startup.
-	echo [artex] 请求重启（应用新版本）…
+	echo [artex] reinicializacao solicitada para aplicar a nova versao...
 	set /a delay=1
 	goto loop
 )
 
-echo [artex] 异常退出 ^(code=!code!^)，!delay!s 后重启 1>&2
+echo [artex] encerrado com codigo !code!; reiniciando em !delay!s 1>&2
 rem timeout fails in the redirected console, and ping is used to resolve it (N+1 times for N seconds
 rem of delay).
 set /a pings=!delay!+1

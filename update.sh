@@ -16,10 +16,10 @@ ask(){  local p="$1" d="${2:-}" a; read -rp "$p${d:+ [$d]}: " a; echo "${a:-$d}"
 # ── Optional: Synchronize repository to the latest code (compose/script/local compile source code
 # are updated by it) ──────
 sync_repo(){
-  [ -d .git ] && command -v git >/dev/null 2>&1 || { warn "非 git 工作副本，跳过 git pull"; return; }
-  [ "$(ask '拉取最新代码 (git pull --ff-only)? (y/n)' y)" = y ] || return
+  [ -d .git ] && command -v git >/dev/null 2>&1 || { warn "Não é uma cópia Git; ignorando git pull"; return; }
+  [ "$(ask 'Baixar o código mais recente com git pull --ff-only? (y/n)' y)" = y ] || return
   if ! git pull --ff-only; then
-    warn "git pull 未能快进（本地有改动或分支分叉）——请手动处理后重试，本次沿用当前代码"
+    warn "git pull não pôde avançar; resolva alterações ou divergências manualmente. O código atual será mantido"
   fi
 }
 
@@ -27,61 +27,61 @@ sync_repo(){
 # ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 update_docker(){
   command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1 \
-    || die "未检测到 docker / docker compose，请先用 ./install.sh 安装部署"
-  [ -f .env ] || die "未找到 .env，请先运行 ./install.sh 完成首次部署"
+    || die "Docker ou Docker Compose não detectado; execute ./install.sh primeiro"
+  [ -f .env ] || die ".env não encontrado; execute ./install.sh primeiro"
 
   # Optional: Upgrade to specified version tag (if left empty, ARTEX_TAG in.env is used, default is
   # latest)
-  local tag; tag="$(ask '目标镜像 tag（回车沿用 .env / latest）' '')"
+  local tag; tag="$(ask 'Tag da imagem (Enter mantém .env/latest)' '')"
   if [ -n "$tag" ]; then
     if grep -q '^ARTEX_TAG=' .env; then
       sed -i.bak "s|^ARTEX_TAG=.*|ARTEX_TAG=${tag}|" .env && rm -f .env.bak
     else
       printf '\nARTEX_TAG=%s\n' "$tag" >> .env
     fi
-    ok "已将 ARTEX_TAG 设为 ${tag}"
+    ok "ARTEX_TAG definido como ${tag}"
   fi
 
   # Only artex: postgres is fixed 16-alpine, so it doesn't need to be upgraded (pulling it down is a
   # waste of bandwidth and large version changes can pose compatibility risks). artex declares
   # depends_on postgres, so if pg is not started with the service name up, it will start
   # automatically, and if it is already running, it will remain as it is, not rebuilt.
-  info "拉取新镜像（仅 artex）…"
+  info "Baixando a nova imagem do ARTEX…"
   docker compose pull artex
-  info "重建并启动（artex 重启时自动迁移 schema）…"
+  info "Recriando e iniciando; o schema será migrado automaticamente…"
   docker compose up -d artex
-  ok "更新完成 → http://localhost:8787"
-  info "查看日志：docker compose logs -f artex"
-  info "清理旧镜像（可选）：docker image prune -f"
+  ok "Atualização concluída: http://localhost:8787"
+  info "Logs: docker compose logs -f artex"
+  info "Limpeza opcional de imagens antigas: docker image prune -f"
 }
 
 # ── ② Local compilation update ────────────────────────────────────────
 update_local(){
-  command -v go >/dev/null 2>&1 || die "未检测到 Go（>=1.26）：https://go.dev/dl/"
-  [ -f config.json ] || warn "未找到 config.json——若首次部署请改用 ./install.sh"
+  command -v go >/dev/null 2>&1 || die "Go >= 1.26 não detectado: https://go.dev/dl/"
+  [ -f config.json ] || warn "config.json não encontrado; para a primeira instalação, use ./install.sh"
   ok "Go: $(go version)"
 
   if command -v npm >/dev/null 2>&1; then
-    info "重建前端静态产物…"
+    info "Gerando novamente o frontend estático…"
     ( cd web && npm ci && npm run build:static )
     rm -rf server/webui/dist && cp -r web/out server/webui/dist
-    info "重新编译内嵌单二进制…"
+    info "Recompilando o binário único com frontend embutido…"
     CGO_ENABLED=0 go build -tags embedui -trimpath -o artex ./cmd/artex
   else
-    warn "未检测到 npm：编译**不内嵌前端**的后端（前端需另跑 npm run dev）"
+    warn "npm não detectado: compilando o backend sem frontend; execute npm run dev separadamente"
     CGO_ENABLED=0 go build -o artex ./cmd/artex
   fi
-  ok "编译完成 → ./artex"
-  warn "请重启正在运行的 artex 进程以生效（重启时会自动迁移 schema）"
+  ok "Compilação concluída: ./artex"
+  warn "Reinicie o processo ARTEX para aplicar a atualização e migrar o schema"
 }
 
 echo "=============================="
-echo "  ARTEX 更新"
-echo "  1) Docker 更新（拉新镜像重建）"
-echo "  2) 本地更新（go 重新编译）"
+echo "  Atualização do ARTEX"
+echo "  1) Atualizar com Docker"
+echo "  2) Atualizar localmente com Go"
 echo "=============================="
-case "$(ask '选择' 1)" in
+case "$(ask 'Escolha' 1)" in
   1) sync_repo; update_docker ;;
   2) sync_repo; update_local ;;
-  *) die "无效选择" ;;
+  *) die "Escolha inválida" ;;
 esac

@@ -20,7 +20,7 @@ set -u
 cd "$(dirname "$0")" || exit 1
 
 BIN=./artex
-[ -x "$BIN" ] || { echo "[artex] 找不到可执行文件 $BIN" >&2; exit 1; }
+[ -x "$BIN" ] || { echo "[artex] executável não encontrado: $BIN" >&2; exit 1; }
 
 RESTART_CODE=75
 MAX_DELAY=60
@@ -57,23 +57,23 @@ while :; do
 	child=0
 
 	if [ "$stopping" -eq 1 ]; then
-		echo "[artex] 已停止"
+		echo "[artex] interrompido"
 		exit 0
 	fi
 
 	case "$code" in
 		0)
-			echo "[artex] 正常退出"
+			echo "[artex] encerrado normalmente"
 			exit 0
 			;;
 		"$RESTART_CODE")
 			# Update/rollback ready: After rebooting, artex will complete the update at startup (see
 			# selfupdate.Bootstrap).
-			echo "[artex] 请求重启（应用新版本）…"
+			echo "[artex] reinicialização solicitada para aplicar a nova versão…"
 			delay=1
 			;;
 		*)
-			echo "[artex] 异常退出 (code=$code)，${delay}s 后重启" >&2
+			echo "[artex] encerrado com código $code; reiniciando em ${delay}s" >&2
 			sleep "$delay"
 			delay=$((delay * 2))
 			[ "$delay" -gt "$MAX_DELAY" ] && delay=$MAX_DELAY

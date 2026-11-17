@@ -36,7 +36,7 @@ EXEC_KIND=""       # compose | docker (which exec to use in docker mode; empty =
 NEWPASS=""
 ASSUME_YES=0
 
-die() { echo "错误：$*" >&2; exit 1; }
+die() { echo "Erro: $*" >&2; exit 1; }
 info() { echo "· $*" >&2; }
 
 usage() { sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
@@ -58,7 +58,7 @@ while [[ $# -gt 0 ]]; do
     -p|--new-password) NEWPASS="${2:-}"; shift 2 ;;
     -y|--yes)         ASSUME_YES=1; shift ;;
     -h|--help)        usage ;;
-    *) die "未知参数：$1（-h 查看用法）" ;;
+    *) die "Argumento desconhecido: $1 (use -h para ajuda)" ;;
   esac
 done
 
@@ -120,16 +120,16 @@ if [[ -z "$MODE" ]]; then
     MODE="local"
   fi
 fi
-info "部署模式：$MODE"
+info "Modo de implantação: $MODE"
 
 # Password: Remember me New password
 if [[ -z "$NEWPASS" ]]; then
-  read -r -s -p "输入新密码（用户名固定为 ARTEX）：" NEWPASS; echo >&2
-  [[ -n "$NEWPASS" ]] || die "密码不能为空"
-  read -r -s -p "再次输入以确认：" NEWPASS2; echo >&2
-  [[ "$NEWPASS" == "$NEWPASS2" ]] || die "两次输入不一致"
+  read -r -s -p "Digite a nova senha (o usuário é ARTEX): " NEWPASS; echo >&2
+  [[ -n "$NEWPASS" ]] || die "A senha não pode estar vazia"
+  read -r -s -p "Digite novamente para confirmar: " NEWPASS2; echo >&2
+  [[ "$NEWPASS" == "$NEWPASS2" ]] || die "As senhas não coincidem"
 fi
-[[ -n "$NEWPASS" ]] || die "密码不能为空"
+[[ -n "$NEWPASS" ]] || die "A senha não pode estar vazia"
 
 # Pass the password to psql via an environment variable (read by \getenv, not entered in argv/ps)
 export ARTEX_RESET_NEWPASS="$NEWPASS"
@@ -154,20 +154,20 @@ if [[ "$MODE" == "local" ]]; then
   if [[ -z "$DSN" && -z "$HOST$USER$DBNAME" ]]; then
     cfg="${CONFIG:-config.json}"
     if [[ -f "$cfg" ]]; then
-      info "从 $cfg 读取数据库配置"
+      info "Configuração do banco lida de $cfg"
       apply_config_fields < <(read_config_json "$cfg")
     fi
   fi
 
-  command -v psql >/dev/null 2>&1 || die "本机未找到 psql（请安装 postgresql-client，或改用 -m docker）"
+  command -v psql >/dev/null 2>&1 || die "psql não encontrado; instale postgresql-client ou use -m docker"
 
   declare -a PSQL_ARGS=()
   if [[ -n "$DSN" ]]; then
     PSQL_ARGS=("$DSN")
     target="$DSN"
   else
-    [[ -n "$USER"   ]] || die "缺少数据库用户（-U）或有效的 config.json/DSN"
-    [[ -n "$DBNAME" ]] || die "缺少数据库名（-d）或有效的 config.json/DSN"
+    [[ -n "$USER"   ]] || die "Informe o usuário do banco (-U) ou um config.json/DSN válido"
+    [[ -n "$DBNAME" ]] || die "Informe o nome do banco (-d) ou um config.json/DSN válido"
     HOST="${HOST:-127.0.0.1}"; PORT="${PORT:-5432}"; SSLMODE="${SSLMODE:-disable}"
     PSQL_ARGS=(-h "$HOST" -p "$PORT" -U "$USER" -d "$DBNAME")
     [[ -n "$SSLMODE" ]] && export PGSSLMODE="$SSLMODE"
@@ -175,19 +175,19 @@ if [[ "$MODE" == "local" ]]; then
     target="$USER@$HOST:$PORT/$DBNAME"
   fi
 
-  info "目标数据库：$target"
+  info "Banco de destino: $target"
   if [[ "$ASSUME_YES" -ne 1 ]]; then
-    read -r -p "确认在该库重置 ARTEX 密码？[y/N] " ans
-    [[ "$ans" == "y" || "$ans" == "Y" ]] || die "已取消"
+    read -r -p "Confirmar redefinição da senha do ARTEX neste banco? [y/N] " ans
+    [[ "$ans" == "y" || "$ans" == "Y" ]] || die "Operação cancelada"
   fi
 
   if ! printf '%s\n' "$SQL" | psql "${PSQL_ARGS[@]}" -v ON_ERROR_STOP=1 -q >/dev/null; then
-    die "写入失败。若报 pgcrypto 权限/缺失，请用具备建扩展权限的角色，或先手动执行 CREATE EXTENSION pgcrypto。"
+    die "Falha na gravação. Use uma função com permissão para criar pgcrypto ou execute CREATE EXTENSION pgcrypto manualmente"
   fi
 
 else
   # ---- docker ----
-  command -v docker >/dev/null 2>&1 || die "未找到 docker"
+  command -v docker >/dev/null 2>&1 || die "Docker não encontrado"
   CONTAINER="${CONTAINER:-postgres}"
 
   # Choose exec mode: docker compose exec (service name) is preferred, otherwise docker exec
@@ -211,10 +211,10 @@ else
   [[ -n "$DBPASS" ]] && export PGPASSWORD="$DBPASS"
   [[ -z "${PGPASSWORD:-}" && -n "${POSTGRES_PASSWORD:-}" ]] && export PGPASSWORD="$POSTGRES_PASSWORD"
 
-  info "目标：容器 $CONTAINER 内 psql -U $DUSER -d $DNAME（exec=$EXEC_KIND）"
+  info "Destino: psql -U $DUSER -d $DNAME no contêiner $CONTAINER (exec=$EXEC_KIND)"
   if [[ "$ASSUME_YES" -ne 1 ]]; then
-    read -r -p "确认在该容器数据库重置 ARTEX 密码？[y/N] " ans
-    [[ "$ans" == "y" || "$ans" == "Y" ]] || die "已取消"
+    read -r -p "Confirmar redefinição da senha no banco deste contêiner? [y/N] " ans
+    [[ "$ans" == "y" || "$ans" == "Y" ]] || die "Operação cancelada"
   fi
 
   # -e Name only, no values → Inherits from the current environment, password does not appear in the
@@ -229,9 +229,9 @@ else
   fi
 
   if ! printf '%s\n' "$SQL" | "${EXEC_CMD[@]}" >/dev/null; then
-    die "写入失败。请确认容器名（-c）、数据库账号（.env 的 POSTGRES_*），以及角色有 pgcrypto 权限。"
+    die "Falha na gravação. Verifique o contêiner (-c), POSTGRES_* no .env e as permissões de pgcrypto"
   fi
 fi
 
 unset ARTEX_RESET_NEWPASS
-echo "✓ 已重置 ARTEX 管理员密码。请用用户名 ARTEX + 新密码登录（无需重启服务）。"
+echo "✓ Senha do administrador ARTEX redefinida. Entre com o usuário ARTEX; não é necessário reiniciar o serviço."
