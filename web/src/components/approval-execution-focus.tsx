@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import type { Activity, InterceptExecution } from "@/lib/types";
@@ -34,12 +35,18 @@ export function useApprovalFocus({ taskId, conversationId }: { taskId?: string; 
             ? source.conversation_id !== conversationId
             : source.task_id !== taskId || source.conversation_id != null
         ) {
-          throw new Error("审批来源与当前会话不一致");
+          throw new Error("A origem da aprovação não corresponde à sessão atual");
         }
         setState({ id, source, loading: false });
       })
       .catch((e) => {
-        if (!cancelled) setState({ id, error: (e as Error).message || "无法定位原始执行", loading: false });
+        if (!cancelled) {
+          setState({
+            id,
+            error: (e as Error).message || "Não foi possível localizar a execução original",
+            loading: false,
+          });
+        }
       });
     return () => {
       cancelled = true;
@@ -78,13 +85,13 @@ export function useApprovalHistory(
         const page = await loadPage(before);
         if (cancelled) return;
         if (!page.items.length || (before > 0 && page.items[0].seq >= before)) {
-          throw new Error("会话中未找到对应工具调用，记录可能已删除");
+          throw new Error("A chamada de ferramenta não foi encontrada na sessão; o registro pode ter sido excluído");
         }
         mergePage(page);
         current = page.items;
         before = current[0].seq;
         if (!page.hasMore && !current.some((a) => a.seq === source.seq)) {
-          throw new Error("会话中未找到对应工具调用");
+          throw new Error("A chamada de ferramenta não foi encontrada na sessão");
         }
       }
       if (!cancelled) setResult({ source });
@@ -118,19 +125,19 @@ export function ApprovalExecutionFocus({
     >
       <span className={error ? "text-destructive" : "text-muted-foreground"}>
         {error
-          ? `无法定位：${error}`
+          ? `Não foi possível localizar: ${error}`
           : history.ready
-            ? `已展开审批 #${state.id} 对应的工具调用`
-            : `正在加载审批 #${state.id} 所在的对话位置…`}
+            ? `Chamada de ferramenta da aprovação #${state.id} exibida`
+            : `Localizando a aprovação #${state.id} na conversa…`}
       </span>
       <div className="flex gap-2">
         {error ? (
           <Button size="sm" variant="outline" onClick={focus.retry}>
-            重试定位
+            Tentar novamente
           </Button>
         ) : null}
         <Button size="sm" variant="ghost" onClick={focus.close}>
-          取消定位
+          Cancelar
         </Button>
       </div>
     </div>
