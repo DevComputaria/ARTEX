@@ -23,8 +23,8 @@ type CopyButtonProps = {
 // downgrade in HTTP unsecure context (see copyText ).
 export function CopyButton({
   text,
-  successMessage = "已复制",
-  label = "复制",
+  successMessage = "Copiado",
+  label = "Copiar",
   size = "sm",
   variant = "outline",
   className,
@@ -47,7 +47,7 @@ export function CopyButton({
       if (timer.current) clearTimeout(timer.current);
       timer.current = setTimeout(() => setCopied(false), 1500);
     } else {
-      toast.error("复制失败，请手动选择文本复制");
+      toast.error("Falha ao copiar. Selecione e copie o texto manualmente.");
     }
   }
 
