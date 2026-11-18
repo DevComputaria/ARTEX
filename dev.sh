@@ -17,5 +17,5 @@ go run ./cmd/artex -addr :8787 -proxy 127.0.0.1:8788 &
 # Front-end hot-update (Vite/Next dev server, /api backport to :8787).
 ( cd web && npm run dev ) &
 
-echo "[dev] 后端 :8787 / 代理 :8788 / 前端 http://localhost:5173  (Ctrl-C 退出)"
+echo "[dev] backend :8787 / proxy :8788 / frontend http://localhost:5173 (Ctrl-C para sair)"
 wait

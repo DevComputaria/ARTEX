@@ -361,7 +361,7 @@ WHERE id=$1 AND state IN ($3,$4)`, id, NotifyStatePending, NotifyStateFailed, No
 		return err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		return fmt.Errorf("投递 %d 不存在或当前状态不允许重发", id)
+		return fmt.Errorf("Delivery %d does not exist or current state does not permit re-emergence", id)
 	}
 	return nil
 }

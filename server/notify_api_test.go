@@ -60,7 +60,7 @@ func newNotifyFixture(t *testing.T) *notifyFixture {
 
 	// Create a task: A task created by the trafficEvidenceServer shared device cannot get an
 	// exploration id, and the record vulnerability must provide it.
-	task, err := s.m.CreateTask("通知推送测试", "推送行为验证", nil, 0, 0)
+	task, err := s.m.CreateTask("Notify push test", "_Other Organiser", nil, 0, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +87,7 @@ func newNotifyFixture(t *testing.T) *notifyFixture {
 	f := &notifyFixture{s: s, pg: pg, request: request, n: newNotifier(s), taskID: taskID, expID: task.ExpID, cleanupMark: mark}
 	t.Cleanup(func() {
 		if _, err := pg.Exec(`DELETE FROM notification_events WHERE id > $1`, f.cleanupMark); err != nil {
-			t.Logf("清理通知事件失败: %v", err)
+			t.Logf("Clear notification event failed: %v", err)
 		}
 	})
 	// The master switch must be on (other use cases may turn it off).
@@ -108,11 +108,11 @@ func (f *notifyFixture) record(t *testing.T, vulnclass, severity string) int64 {
 		VulnClass:     vulnclass,
 		Name:          vulnclass,
 		Severity:      severity,
-		Summary:       vulnclass + " 的摘要",
+		Summary:       vulnclass + " Summary",
 		Evidence:      "poc",
 	}, nil)
 	if err != nil {
-		t.Fatalf("记录漏洞失败: %v", err)
+		t.Fatalf("Record vulnerability failed: %v", err)
 	}
 	return out.FindingID
 }
@@ -122,7 +122,7 @@ func (f *notifyFixture) channel(t *testing.T, id int64) *db.NotificationChannel 
 	t.Helper()
 	ch, err := f.pg.NotificationChannelByID(context.Background(), id)
 	if err != nil {
-		t.Fatalf("读渠道失败: %v", err)
+		t.Fatalf("read channel: %v", err)
 	}
 	return ch
 }
@@ -132,7 +132,7 @@ func (f *notifyFixture) deliver(t *testing.T, chID int64, baseURL string) {
 	t.Helper()
 	ctx := context.Background()
 	if _, _, err := f.pg.FanOutPendingEvents(ctx, 500); err != nil {
-		t.Fatalf("分派失败: %v", err)
+		t.Fatalf("dispatch: %v", err)
 	}
 	f.n.stepRealtime(ctx, f.channel(t, chID), 50, baseURL)
 }
@@ -144,13 +144,13 @@ func (f *notifyFixture) createChannel(t *testing.T, payload map[string]any) int6
 	raw, _ := json.Marshal(payload)
 	r := f.request("POST", "/api/notify/channels", string(raw))
 	if r.Code != 200 {
-		t.Fatalf("建渠道失败 %d: %s", r.Code, r.Body)
+		t.Fatalf("Failed to build channel %d: %s", r.Code, r.Body)
 	}
 	var res struct {
 		ID int64 `json:"id"`
 	}
 	if err := json.Unmarshal(r.Body.Bytes(), &res); err != nil || res.ID == 0 {
-		t.Fatalf("建渠道返回异常: %s (%v)", r.Body, err)
+		t.Fatalf("Construction channel return anomaly: %s (%v)", r.Body, err)
 	}
 	t.Cleanup(func() { f.pg.Exec(`DELETE FROM notification_channels WHERE id=$1`, res.ID) })
 	return res.ID
@@ -191,7 +191,7 @@ func (f *fakeWebhook) body(t *testing.T, i int) map[string]any {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if i >= len(f.bodies) {
-		t.Fatalf("假接收端只收到 %d 条请求，取不到第 %d 条", len(f.bodies), i)
+		t.Fatalf("Fake receiver received only %d request, not rule %d", len(f.bodies), i)
 	}
 	return f.bodies[i]
 }
@@ -199,7 +199,7 @@ func (f *fakeWebhook) body(t *testing.T, i int) map[string]any {
 func (f *fakeWebhook) last(t *testing.T) map[string]any {
 	t.Helper()
 	if f.count() == 0 {
-		t.Fatal("假接收端没有收到任何请求")
+		t.Fatal("No requests received from the fake receiver")
 	}
 	return f.body(t, f.count()-1)
 }
@@ -219,7 +219,7 @@ func markdownText(t *testing.T, body map[string]any) string {
 			}
 		}
 	}
-	t.Fatalf("请求体里没有可识别的正文: %v", body)
+	t.Fatalf("There is no identifiable body in the request: %v", body)
 	return ""
 }
 
@@ -237,20 +237,20 @@ func TestNotifyEndToEndRealtimeDelivery(t *testing.T) {
 	f := newNotifyFixture(t)
 	hook := newFakeWebhook(t)
 	chID := f.createChannel(t, map[string]any{
-		"name":   "实时推送",
+		"name":   "In real time.",
 		"kind":   notify.KindDingTalk,
 		"config": map[string]any{"webhook": hook.URL},
 	})
-	f.record(t, "SQL注入", "high")
+	f.record(t, "SQL Injection", "high")
 	f.deliver(t, chID, "")
 
 	if hook.count() != 1 {
-		t.Fatalf("应发出 1 条消息，实际 %d", hook.count())
+		t.Fatalf("Should send 1 message, actual %d", hook.count())
 	}
 	text := markdownText(t, hook.last(t))
-	for _, want := range []string{"SQL注入", "高危", "摘要"} {
+	for _, want := range []string{"SQL Injection", "High", "Summary"} {
 		if !strings.Contains(text, want) {
-			t.Fatalf("消息正文缺少 %q:\n%s", want, text)
+			t.Fatalf("message body missing %q:\n%s", want, text)
 		}
 	}
 	// The delivery flow should be changed to sent.
@@ -260,24 +260,24 @@ func TestNotifyEndToEndRealtimeDelivery(t *testing.T) {
 		t.Fatal(err)
 	}
 	if pending != 0 {
-		t.Fatalf("投递后仍有 %d 条未标记 sent", pending)
+		t.Fatalf("Still %d unmarked send after delivery", pending)
 	}
 }
 
 func TestNotifyChannelAPIMasksSecretsAndPreservesOnUpdate(t *testing.T) {
 	f := newNotifyFixture(t)
 	chID := f.createChannel(t, map[string]any{
-		"name":   "掩码用例",
+		"name":   "Mask Example",
 		"kind":   notify.KindDingTalk,
 		"config": map[string]any{"webhook": "https://oapi.dingtalk.com/robot/send?access_token=abc123456", "secret": "SECabcdef123456"},
 	})
 
 	r := f.request("GET", "/api/notify/channels", "")
 	if r.Code != 200 {
-		t.Fatalf("列渠道失败 %d: %s", r.Code, r.Body)
+		t.Fatalf("Column channel failed %d: %s", r.Code, r.Body)
 	}
 	if strings.Contains(r.Body.String(), "abc123456") || strings.Contains(r.Body.String(), "SECabcdef123456") {
-		t.Fatalf("接口回显泄露了凭据: %s", r.Body)
+		t.Fatalf("The interface revealed evidence: %s", r.Body)
 	}
 	var listed struct {
 		Channels []struct {
@@ -300,41 +300,41 @@ func TestNotifyChannelAPIMasksSecretsAndPreservesOnUpdate(t *testing.T) {
 		}
 	}
 	if mine == nil {
-		t.Fatal("新建的渠道未出现在列表里")
+		t.Fatal("The new channel did not appear in the list")
 	}
 	if !notify.IsMasked(fmt.Sprint(mine.Config["webhook"])) || !notify.IsMasked(fmt.Sprint(mine.Config["secret"])) {
-		t.Fatalf("凭据字段应为掩码值: %v", mine.Config)
+		t.Fatalf("credential fields should be masked: %v", mine.Config)
 	}
 	if len(mine.SecretKeys) == 0 {
-		t.Fatal("接口应告知前端哪些字段是凭据")
+		t.Fatal("Interface should inform the front end which fields are evidence")
 	}
 
 	// PATCH only renames + returns mask credentials: true credentials must be retained as they are.
 	body, _ := json.Marshal(map[string]any{
-		"name":   "改名后",
+		"name":   "After change of name",
 		"config": map[string]any{"webhook": fmt.Sprint(mine.Config["webhook"]), "secret": fmt.Sprint(mine.Config["secret"])},
 	})
 	if r := f.request("PATCH", fmt.Sprintf("/api/notify/channels/%d", chID), string(body)); r.Code != 200 {
-		t.Fatalf("更新失败 %d: %s", r.Code, r.Body)
+		t.Fatalf("Update failed %d: %s", r.Code, r.Body)
 	}
 	cfg := f.channelConfig(t, chID)
 	if cfg["webhook"] != "https://oapi.dingtalk.com/robot/send?access_token=abc123456" {
-		t.Fatalf("掩码回传把真凭据覆盖了: %v", cfg["webhook"])
+		t.Fatalf("The masked return overlays the real file: %v", cfg["webhook"])
 	}
 	if cfg["secret"] != "SECabcdef123456" {
-		t.Fatalf("掩码回传把 secret 覆盖了: %v", cfg["secret"])
+		t.Fatalf("Maskback overwrite secret: %v", cfg["secret"])
 	}
-	if f.channel(t, chID).Name != "改名后" {
-		t.Fatal("名字未更新")
+	if f.channel(t, chID).Name != "After change of name" {
+		t.Fatal("Name not updated")
 	}
 
 	// The explicit clear secret should take effect (different from "return mask = keep unchanged").
 	body, _ = json.Marshal(map[string]any{"config": map[string]any{"secret": ""}})
 	if r := f.request("PATCH", fmt.Sprintf("/api/notify/channels/%d", chID), string(body)); r.Code != 200 {
-		t.Fatalf("清空 secret 失败 %d: %s", r.Code, r.Body)
+		t.Fatalf("Clear secret failed %d: %s", r.Code, r.Body)
 	}
 	if _, still := f.channelConfig(t, chID)["secret"]; still {
-		t.Fatal("空串应清空 secret")
+		t.Fatal("empty string should be empty")
 	}
 }
 
@@ -354,26 +354,26 @@ func TestNotifyChannelAPICreateValidation(t *testing.T) {
 		payload map[string]any
 		wantSub string
 	}{
-		{"类型非法", map[string]any{"name": "x", "kind": "nope", "config": map[string]any{}}, "渠道类型无效"},
-		{"缺名称", map[string]any{"kind": notify.KindDingTalk, "config": map[string]any{"webhook": "https://e.com/h"}}, "缺少渠道名称"},
-		{"缺 webhook", map[string]any{"name": "x", "kind": notify.KindDingTalk, "config": map[string]any{}}, "Webhook"},
-		{"webhook 协议非法", map[string]any{"name": "x", "kind": notify.KindDingTalk, "config": map[string]any{"webhook": "file:///etc/passwd"}}, "Webhook 地址无效"},
-		{"模式非法", map[string]any{"name": "x", "kind": notify.KindDingTalk, "mode": "sometimes", "config": map[string]any{"webhook": "https://e.com/h"}}, "推送模式无效"},
+		{"Type of illegal", map[string]any{"name": "x", "kind": "nope", "config": map[string]any{}}, "Channel type invalid"},
+		{"Missing name", map[string]any{"kind": notify.KindDingTalk, "config": map[string]any{"webhook": "https://e.com/h"}}, "Can not open message"},
+		{"missing webhook", map[string]any{"name": "x", "kind": notify.KindDingTalk, "config": map[string]any{}}, "missing webhook"},
+		{"Webhook protocol is illegal", map[string]any{"name": "x", "kind": notify.KindDingTalk, "config": map[string]any{"webhook": "file:///etc/passwd"}}, "invalid webhook address"},
+		{"Model illegal", map[string]any{"name": "x", "kind": notify.KindDingTalk, "mode": "sometimes", "config": map[string]any{"webhook": "https://e.com/h"}}, "push mode is invalid"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			raw, _ := json.Marshal(tc.payload)
 			r := f.request("POST", "/api/notify/channels", string(raw))
 			if r.Code != 400 {
-				t.Fatalf("应返回 400，得到 %d: %s", r.Code, r.Body)
+				t.Fatalf("Should return 400, get %d: %s", r.Code, r.Body)
 			}
 			if !strings.Contains(r.Body.String(), tc.wantSub) {
-				t.Fatalf("错误信息应提到 %q，得到 %s", tc.wantSub, r.Body)
+				t.Fatalf("Error message should refer to %q, get %s", tc.wantSub, r.Body)
 			}
 		})
 	}
 	if r := f.request("DELETE", "/api/notify/channels/99999999", ""); r.Code != 404 {
-		t.Fatalf("删除不存在的渠道应 404，得到 %d", r.Code)
+		t.Fatalf("Remove non-existent channels should be 404, get %d", r.Code)
 	}
 }
 
@@ -381,12 +381,12 @@ func TestNotifyFilterBlocksBelowThreshold(t *testing.T) {
 	f := newNotifyFixture(t)
 	hook := newFakeWebhook(t)
 	chID := f.createChannel(t, map[string]any{
-		"name":   "仅严重",
+		"name":   "Only serious.",
 		"kind":   notify.KindDingTalk,
 		"config": map[string]any{"webhook": hook.URL},
 		"filter": map[string]any{"min_severity": "critical"},
 	})
-	f.record(t, "低危问题", "low")
+	f.record(t, "Low-risk issues", "low")
 	if _, _, err := f.pg.FanOutPendingEvents(context.Background(), 500); err != nil {
 		t.Fatal(err)
 	}
@@ -395,11 +395,11 @@ func TestNotifyFilterBlocksBelowThreshold(t *testing.T) {
 		t.Fatal(err)
 	}
 	if n != 0 {
-		t.Fatalf("低于阈值的漏洞不该产生投递，得到 %d 条", n)
+		t.Fatalf("Vulnerability below the threshold should not produce delivery, get %d", n)
 	}
 	f.n.stepRealtime(context.Background(), f.channel(t, chID), 50, "")
 	if hook.count() != 0 {
-		t.Fatal("被过滤的漏洞不应发出消息")
+		t.Fatal("The filtered Vulnerability should not send a message.")
 	}
 }
 
@@ -407,13 +407,13 @@ func TestNotifyDigestBatchesMultipleFindingsIntoOneMessage(t *testing.T) {
 	f := newNotifyFixture(t)
 	hook := newFakeWebhook(t)
 	chID := f.createChannel(t, map[string]any{
-		"name":   "汇总推送",
+		"name":   "Combine & Send",
 		"kind":   notify.KindDingTalk,
 		"mode":   db.NotifyModeDigest,
 		"config": map[string]any{"webhook": hook.URL},
 	})
 	for i := 0; i < 3; i++ {
-		f.record(t, fmt.Sprintf("汇总漏洞%d", i+1), "high")
+		f.record(t, fmt.Sprintf("Vulnerability %d Summary", i+1), "high")
 	}
 	ctx := context.Background()
 	if _, _, err := f.pg.FanOutPendingEvents(ctx, 500); err != nil {
@@ -424,22 +424,22 @@ func TestNotifyDigestBatchesMultipleFindingsIntoOneMessage(t *testing.T) {
 	// Not due: not issued.
 	f.n.stepDigest(ctx, ch, 50, "")
 	if hook.count() != 0 {
-		t.Fatal("汇总批次未到期就发了")
+		t.Fatal("Summons were sent before they were due")
 	}
 
 	// After the reminder: three messages combined into one.
 	f.agePendingBatch(t, chID)
 	f.n.stepDigest(ctx, ch, 50, "")
 	if got := hook.count(); got != 1 {
-		t.Fatalf("三条应汇总成一条消息，实际发了 %d 条", got)
+		t.Fatalf("Three should be combined into one message, actually sent %d", got)
 	}
 	text := markdownText(t, hook.last(t))
-	if !strings.Contains(text, "近") || !strings.Contains(text, "3 个漏洞") {
-		t.Fatalf("汇总消息缺少条数/时间窗文案:\n%s", text)
+	if !strings.Contains(text, "last 30 minutes") || !strings.Contains(text, "3 vulnerabilities") {
+		t.Fatalf("Summary message missing bar/time window case: \n %s", text)
 	}
 	for i := 1; i <= 3; i++ {
-		if !strings.Contains(text, fmt.Sprintf("汇总漏洞%d", i)) {
-			t.Fatalf("汇总消息缺少第 %d 条:\n%s", i, text)
+		if !strings.Contains(text, fmt.Sprintf("Vulnerability %d Summary", i)) {
+			t.Fatalf("Fusion message missing Article %d: \n %s", i, text)
 		}
 	}
 	// The same batch should share the batch_id.
@@ -448,7 +448,7 @@ func TestNotifyDigestBatchesMultipleFindingsIntoOneMessage(t *testing.T) {
 		t.Fatal(err)
 	}
 	if total != 3 || distinct != 1 {
-		t.Fatalf("三条投递应共享一个 batch_id，得到 distinct=%d total=%d", distinct, total)
+		t.Fatalf("The three inputs should share a batch_id, obtaining distinct=%d total=%d", distinct, total)
 	}
 }
 
@@ -456,12 +456,12 @@ func TestNotifyDisabledChannelDoesNotSend(t *testing.T) {
 	f := newNotifyFixture(t)
 	hook := newFakeWebhook(t)
 	chID := f.createChannel(t, map[string]any{
-		"name":    "停用渠道",
+		"name":    "Disable channel",
 		"kind":    notify.KindDingTalk,
 		"enabled": false,
 		"config":  map[string]any{"webhook": hook.URL},
 	})
-	f.record(t, "停用期间的漏洞", "critical")
+	f.record(t, "Vulnerabiliti during deactivation", "critical")
 	if _, _, err := f.pg.FanOutPendingEvents(context.Background(), 500); err != nil {
 		t.Fatal(err)
 	}
@@ -470,7 +470,7 @@ func TestNotifyDisabledChannelDoesNotSend(t *testing.T) {
 		t.Fatal(err)
 	}
 	if n != 0 {
-		t.Fatalf("停用渠道不该产生投递，得到 %d 条", n)
+		t.Fatalf("Disable channel should not result in delivery, get %d", n)
 	}
 }
 
@@ -478,15 +478,15 @@ func TestNotifyStatusChangeDelivery(t *testing.T) {
 	f := newNotifyFixture(t)
 	hook := newFakeWebhook(t)
 	chID := f.createChannel(t, map[string]any{
-		"name":   "状态变更订阅",
+		"name":   "Organisation",
 		"kind":   notify.KindDingTalk,
 		"config": map[string]any{"webhook": hook.URL},
 		"filter": map[string]any{"on_status_change": true},
 	})
-	finding := f.record(t, "状态变更用例", "high")
+	finding := f.record(t, "State Change Cases", "high")
 	r := f.request("PATCH", fmt.Sprintf("/api/exploration/findings/%d", finding), `{"status":"fixed"}`)
 	if r.Code != 200 {
-		t.Fatalf("改状态失败 %d: %s", r.Code, r.Body)
+		t.Fatalf("Failed to change state %d: %s", r.Code, r.Body)
 	}
 	f.deliver(t, chID, "")
 
@@ -495,12 +495,12 @@ func TestNotifyStatusChangeDelivery(t *testing.T) {
 	found := false
 	for i := 0; i < hook.count(); i++ {
 		text := markdownText(t, hook.body(t, i))
-		if strings.Contains(text, "状态变更") && strings.Contains(text, "已修复") {
+		if strings.Contains(text, "Status change") && strings.Contains(text, "Fixed") {
 			found = true
 		}
 	}
 	if !found {
-		t.Fatalf("没有收到含「状态变更 → 已修复」的消息（共 %d 条）", hook.count())
+		t.Fatalf("No information has been received containing \"change of status\" (Articles %d)", hook.count())
 	}
 }
 
@@ -508,13 +508,13 @@ func TestNotifyStatusChangeSuppressedByDefault(t *testing.T) {
 	f := newNotifyFixture(t)
 	hook := newFakeWebhook(t)
 	chID := f.createChannel(t, map[string]any{
-		"name":   "不订阅状态变更",
+		"name":   "No Subscription Change",
 		"kind":   notify.KindDingTalk,
 		"config": map[string]any{"webhook": hook.URL},
 	})
-	finding := f.record(t, "不订阅变更", "high")
+	finding := f.record(t, "No Subscription Change", "high")
 	if r := f.request("PATCH", fmt.Sprintf("/api/exploration/findings/%d", finding), `{"status":"false_positive"}`); r.Code != 200 {
-		t.Fatalf("改状态失败 %d: %s", r.Code, r.Body)
+		t.Fatalf("Failed to change state %d: %s", r.Code, r.Body)
 	}
 	if _, _, err := f.pg.FanOutPendingEvents(context.Background(), 500); err != nil {
 		t.Fatal(err)
@@ -526,7 +526,7 @@ WHERE d.channel_id=$1 AND e.kind=$2`, chID, notify.EventFindingStatusChanged).Sc
 		t.Fatal(err)
 	}
 	if n != 0 {
-		t.Fatalf("未订阅状态变更的渠道不该收到状态变更投递，得到 %d 条", n)
+		t.Fatalf("Channels for change of non-Subscription status should not receive a change of status delivery, get %d", n)
 	}
 }
 
@@ -534,30 +534,30 @@ func TestNotifyTestMessageEndpoint(t *testing.T) {
 	f := newNotifyFixture(t)
 	hook := newFakeWebhook(t)
 	chID := f.createChannel(t, map[string]any{
-		"name":   "测试发送",
+		"name":   "Test Send",
 		"kind":   notify.KindDingTalk,
 		"config": map[string]any{"webhook": hook.URL},
 	})
 	if r := f.request("POST", fmt.Sprintf("/api/notify/channels/%d/test", chID), ""); r.Code != 200 {
-		t.Fatalf("测试发送失败 %d: %s", r.Code, r.Body)
+		t.Fatalf("test send failed %d: %s", r.Code, r.Body)
 	}
 	if hook.count() != 1 {
-		t.Fatalf("假接收端应收到 1 条测试消息，得到 %d", hook.count())
+		t.Fatalf("False receiver should receive 1 test message, get %d", hook.count())
 	}
 	// Test messages must be clearly identified as testing and not mistaken for real
 	// vulnerabilities.
-	if text := markdownText(t, hook.last(t)); !strings.Contains(text, "测试") {
-		t.Fatalf("测试消息应标明是测试: %s", text)
+	if text := markdownText(t, hook.last(t)); !strings.Contains(text, "Test") {
+		t.Fatalf("Test message should indicate test: %s", text)
 	}
 	// When the configuration breaks down, the original error of the channel should be returned to
 	// the user.
 	badID := f.createChannel(t, map[string]any{
-		"name":   "坏地址",
+		"name":   "Bad address.",
 		"kind":   notify.KindDingTalk,
 		"config": map[string]any{"webhook": "http://127.0.0.1:1/hook"},
 	})
 	if r := f.request("POST", fmt.Sprintf("/api/notify/channels/%d/test", badID), ""); r.Code != 502 {
-		t.Fatalf("投递失败应回 502，得到 %d: %s", r.Code, r.Body)
+		t.Fatalf("The delivery failed to return 502, get %d: %s", r.Code, r.Body)
 	}
 }
 
@@ -565,11 +565,11 @@ func TestNotifyDeliveriesHistoryAndRetry(t *testing.T) {
 	f := newNotifyFixture(t)
 	// Pointing to an address that will inevitably fail, making a failed delivery.
 	chID := f.createChannel(t, map[string]any{
-		"name":   "失败重试",
+		"name":   "Failed",
 		"kind":   notify.KindDingTalk,
 		"config": map[string]any{"webhook": "http://127.0.0.1:1/hook"},
 	})
-	f.record(t, "会失败的推送", "high")
+	f.record(t, "It'll fail.", "high")
 	ctx := context.Background()
 	if _, _, err := f.pg.FanOutPendingEvents(ctx, 500); err != nil {
 		t.Fatal(err)
@@ -587,12 +587,12 @@ func TestNotifyDeliveriesHistoryAndRetry(t *testing.T) {
 		t.Fatal(err)
 	}
 	if state != db.NotifyStateFailed {
-		t.Fatalf("重试耗尽后应为 failed，得到 %s", state)
+		t.Fatalf("Retry should be finished, get %s", state)
 	}
 
 	r := f.request("GET", fmt.Sprintf("/api/notify/deliveries?channel_id=%d&state=failed", chID), "")
 	if r.Code != 200 {
-		t.Fatalf("查历史失败 %d: %s", r.Code, r.Body)
+		t.Fatalf("Failed to check history %d: %s", r.Code, r.Body)
 	}
 	var hist struct {
 		Deliveries []struct {
@@ -608,28 +608,28 @@ func TestNotifyDeliveriesHistoryAndRetry(t *testing.T) {
 		t.Fatal(err)
 	}
 	if hist.Total != 1 || len(hist.Deliveries) != 1 {
-		t.Fatalf("应查到 1 条失败投递，得到 total=%d len=%d", hist.Total, len(hist.Deliveries))
+		t.Fatalf("1 failed delivery, total=%d len= %d", hist.Total, len(hist.Deliveries))
 	}
 	if hist.Deliveries[0].LastError == "" {
-		t.Fatal("历史里应带上失败原因，否则用户无法排查")
+		t.Fatal("There should be reasons for failure in history, otherwise users cannot check")
 	}
 	if hist.Deliveries[0].Attempts < db.MaxNotifyAttempts {
-		t.Fatalf("尝试次数应被记录，得到 %d", hist.Deliveries[0].Attempts)
+		t.Fatalf("The number of attempts should be recorded and obtained %d", hist.Deliveries[0].Attempts)
 	}
-	if hist.Deliveries[0].Title != "会失败的推送" {
-		t.Fatalf("历史应带出漏洞标题，得到 %q", hist.Deliveries[0].Title)
+	if hist.Deliveries[0].Title != "It'll fail." {
+		t.Fatalf("History should bring out the vulnerability title, get %q", hist.Deliveries[0].Title)
 	}
 
 	// Manual re-dispatch: Return to pending and clear the count.
 	if r := f.request("POST", fmt.Sprintf("/api/notify/deliveries/%d/retry", hist.Deliveries[0].ID), ""); r.Code != 200 {
-		t.Fatalf("重发失败 %d: %s", r.Code, r.Body)
+		t.Fatalf("Repeat failed %d: %s", r.Code, r.Body)
 	}
 	var attempts int
 	if err := f.pg.QueryRow(`SELECT state, attempts FROM notification_deliveries WHERE id=$1`, hist.Deliveries[0].ID).Scan(&state, &attempts); err != nil {
 		t.Fatal(err)
 	}
 	if state != db.NotifyStatePending || attempts != 0 {
-		t.Fatalf("重发后应为 pending 且 attempts=0，得到 %s/%d", state, attempts)
+		t.Fatalf("Reissued should read pending and attachments=0, get %s/%d", state, attempts)
 	}
 }
 
@@ -637,7 +637,7 @@ func TestNotifyMetaAndSettingsRoundTrip(t *testing.T) {
 	f := newNotifyFixture(t)
 	r := f.request("GET", "/api/notify/meta", "")
 	if r.Code != 200 {
-		t.Fatalf("meta 失败: %s", r.Body)
+		t.Fatalf("Meta failed: %s", r.Body)
 	}
 	var meta struct {
 		Kinds []struct {
@@ -649,28 +649,28 @@ func TestNotifyMetaAndSettingsRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(meta.Kinds) != len(notify.Kinds()) {
-		t.Fatalf("meta 应列出全部 %d 个渠道，得到 %d", len(notify.Kinds()), len(meta.Kinds))
+		t.Fatalf("Meta should list all %d channels, get %d", len(notify.Kinds()), len(meta.Kinds))
 	}
 	for _, k := range meta.Kinds {
 		if len(k.SecretKeys) == 0 {
-			t.Errorf("渠道 %s 未上报凭据字段", k.Kind)
+			t.Errorf("Channel %s does not report supporting fields", k.Kind)
 		}
 	}
 
 	// The three global settings are returned. The tail slash should be standardized, otherwise the
 	// return string will look like "//function/...".
 	if r := f.request("PUT", "/api/settings", `{"notify_public_base_url":"https://artex.example.com/","notify_digest_interval_min":15,"notify_enabled":true}`); r.Code != 200 {
-		t.Fatalf("写设置失败 %d: %s", r.Code, r.Body)
+		t.Fatalf("Writing settings failed %d: %s", r.Code, r.Body)
 	}
 	t.Cleanup(func() {
 		f.pg.Exec(`DELETE FROM settings WHERE key IN ($1,$2)`, settingNotifyPublicBaseURL, settingNotifyDigestMinutes)
 	})
 	payload := f.s.settingsPayload()
 	if payload["notify_public_base_url"] != "https://artex.example.com" {
-		t.Fatalf("回链地址未规范化: %v", payload["notify_public_base_url"])
+		t.Fatalf("Unmodified return-chain address: %v", payload["notify_public_base_url"])
 	}
 	if payload["notify_digest_interval_min"] != 15 {
-		t.Fatalf("汇总周期未生效: %v", payload["notify_digest_interval_min"])
+		t.Fatalf("Summary cycle not in effect: %v", payload["notify_digest_interval_min"])
 	}
 
 	// Illegal values should be rejected.
@@ -680,7 +680,7 @@ func TestNotifyMetaAndSettingsRoundTrip(t *testing.T) {
 		`{"notify_digest_interval_min":99999}`,
 	} {
 		if r := f.request("PUT", "/api/settings", body); r.Code != 400 {
-			t.Errorf("%s 应返回 400，得到 %d", body, r.Code)
+			t.Errorf("%s Should return 400, get %d", body, r.Code)
 		}
 	}
 }
@@ -691,21 +691,21 @@ func TestNotifyDeepLinkUsesPublicBaseURL(t *testing.T) {
 	f := newNotifyFixture(t)
 	hook := newFakeWebhook(t)
 	chID := f.createChannel(t, map[string]any{
-		"name":   "回链",
+		"name":   "Relink.",
 		"kind":   notify.KindDingTalk,
 		"config": map[string]any{"webhook": hook.URL},
 	})
-	finding := f.record(t, "带回链的漏洞", "high")
+	finding := f.record(t, "Vulnerability with the chain.", "high")
 	f.deliver(t, chID, "https://artex.example.com")
 
 	body := hook.last(t)
 	card, _ := body["actionCard"].(map[string]any)
 	if card == nil {
-		t.Fatalf("有回链时应用 ActionCard，得到 msgtype=%v", body["msgtype"])
+		t.Fatalf("Apply ActionCard, get msgtype=%v", body["msgtype"])
 	}
 	want := fmt.Sprintf("https://artex.example.com/function/findings/detail?id=%d", finding)
 	if card["singleURL"] != want {
-		t.Fatalf("回链不对\n期望 %s\n得到 %v", want, card["singleURL"])
+		t.Fatalf("\n Not expected %s\n gets %v", want, card["singleURL"])
 	}
 }
 
@@ -716,19 +716,19 @@ func TestNotifyNoDeepLinkWithoutBaseURL(t *testing.T) {
 	f := newNotifyFixture(t)
 	hook := newFakeWebhook(t)
 	chID := f.createChannel(t, map[string]any{
-		"name":   "无回链",
+		"name":   "No return chain",
 		"kind":   notify.KindDingTalk,
 		"config": map[string]any{"webhook": hook.URL},
 	})
-	f.record(t, "无回链的漏洞", "high")
+	f.record(t, "Vulnerabiliti without a return chain", "high")
 	f.deliver(t, chID, "")
 
 	body := hook.last(t)
 	if body["msgtype"] != "markdown" {
-		t.Fatalf("未配外部地址时应发 markdown，得到 %v", body["msgtype"])
+		t.Fatalf("If external address is not available, send markdown, get %v", body["msgtype"])
 	}
-	if text := markdownText(t, body); strings.Contains(text, "查看详情") {
-		t.Fatalf("未配外部地址时不该出现详情链接:\n%s", text)
+	if text := markdownText(t, body); strings.Contains(text, "View Details") {
+		t.Fatalf("No detailed link should appear when an external address is not available: \n %s", text)
 	}
 }
 
@@ -746,7 +746,7 @@ func TestNotifyDigestSegmentsAndDefersRemainder(t *testing.T) {
 	hook := newFakeWebhook(t)
 	// Using WeCom:markdown, the maximum 4096 bytes is the tightest of the six channels.
 	chID := f.createChannel(t, map[string]any{
-		"name":   "分段汇总",
+		"name":   "Summary of subparagraphs",
 		"kind":   notify.KindWeCom,
 		"mode":   db.NotifyModeDigest,
 		"config": map[string]any{"webhook": hook.URL},
@@ -754,7 +754,7 @@ func TestNotifyDigestSegmentsAndDefersRemainder(t *testing.T) {
 	const total = 60
 	// The heading is a little longer, guaranteed 60 lines far beyond 4096 bytes, and necessarily
 	// paragraphed.
-	longName := strings.Repeat("超长漏洞名称", 6)
+	longName := strings.Repeat("Super-long vulnerability name", 6)
 	for i := 0; i < total; i++ {
 		f.record(t, longName+strconv.Itoa(i+1), "high")
 	}
@@ -767,7 +767,7 @@ func TestNotifyDigestSegmentsAndDefersRemainder(t *testing.T) {
 
 	f.n.stepDigest(ctx, ch, 50, "")
 	if hook.count() != 1 {
-		t.Fatalf("应只发出一条消息，得到 %d", hook.count())
+		t.Fatalf("Only one message should be sent, got %d", hook.count())
 	}
 
 	var sent, pending int
@@ -779,17 +779,17 @@ func TestNotifyDigestSegmentsAndDefersRemainder(t *testing.T) {
 		t.Fatal(err)
 	}
 	if sent == 0 {
-		t.Fatal("应有条目被标记为已送达")
+		t.Fatal("The entry should be marked as serviceed")
 	}
 	if pending == 0 {
-		t.Fatalf("一批 %d 条不可能全装进 4096 字节，应有剩余待发；sent=%d", total, sent)
+		t.Fatalf("A batch of %d strips cannot be filled in full 4096 bytes, which should remain to be issued; Sent=%d", total, sent)
 	}
 	if sent+pending != total {
-		t.Fatalf("条目数对不上：sent=%d pending=%d total=%d（既没送达也没待发=丢失）", sent, pending, total)
+		t.Fatalf("incorrect entry count: sent=%d pending=%d total=%d (neither delivered nor pending = lost)", sent, pending, total)
 	}
 	// The message body must tell you how many other articles are not included in this article.
-	if text := markdownText(t, hook.last(t)); !strings.Contains(text, "其余") {
-		t.Fatalf("消息应说明还有条目未包含在本条:\n%.400s", text)
+	if text := markdownText(t, hook.last(t)); !strings.Contains(text, "continue in the next message") {
+		t.Fatalf("The message should indicate that an entry is not included in this article: \n %.400s", text)
 	}
 
 	// Postponed entries must not consume the retry budget: attempts are optimistic +1 when
@@ -800,7 +800,7 @@ WHERE channel_id=$1 AND state=$2`, chID, db.NotifyStatePending).Scan(&maxAttempt
 		t.Fatal(err)
 	}
 	if maxAttempts > 0 {
-		t.Fatalf("被推迟的条目不该消耗重试次数（否则几条之后就会被判失败），得到 attempts=%d", maxAttempts)
+		t.Fatalf("Postponed entries should not consume the retry count (otherwise they will fail after a few entries), so attempts=%d", maxAttempts)
 	}
 
 	// The assertion is that ** eventually delivers all of them** and does split into several rounds
@@ -819,16 +819,16 @@ WHERE channel_id=$1 AND state <> $2 AND state <> $3`, chID, db.NotifyStateSent, 
 		}
 		rounds++
 		if rounds > total+5 {
-			t.Fatalf("分段投递不收敛：跑了 %d 轮仍有 %d 条悬而未决", rounds, undelivered)
+			t.Fatalf("segmented delivery did not converge: %d rounds left %d entries unresolved", rounds, undelivered)
 		}
 		before := hook.count()
 		f.n.stepDigest(ctx, ch, 50, "")
 		if hook.count() == before {
-			t.Fatalf("第 %d 轮没有任何进展，剩余 %d 条会永久卡住", rounds, undelivered)
+			t.Fatalf("Round %d no progress, remaining %d will be permanently stuck", rounds, undelivered)
 		}
 	}
 	if rounds < 2 {
-		t.Fatalf("一条 4096 字节的消息装不下 %d 条长标题漏洞，应分多轮发出，实际只用了 %d 轮", total, rounds)
+		t.Fatalf("A 4096 byte message cannot be loaded %d long title vulnerability, which should be distributed in multiple rounds and actually only used %d wheels", total, rounds)
 	}
 	// Each round after the first should be a ** pure rerun**, with no rejected entries.
 	var failed int
@@ -837,7 +837,7 @@ WHERE channel_id=$1 AND state <> $2 AND state <> $3`, chID, db.NotifyStateSent, 
 		t.Fatal(err)
 	}
 	if failed != 0 {
-		t.Fatalf("假接收端始终返回成功，不该有失败条目，得到 %d", failed)
+		t.Fatalf("Fake receiver always returns successful. Shouldn't have failed entry, get %d", failed)
 	}
 }
 
@@ -851,14 +851,14 @@ WHERE channel_id=$1 AND state <> $2 AND state <> $3`, chID, db.NotifyStateSent, 
 // with.
 func TestNotifyBackoffTableMatchesAttemptBudget(t *testing.T) {
 	if len(notifyBackoff) != db.MaxNotifyAttempts {
-		t.Fatalf("退避档位数(%d)与最大尝试次数(%d)不一致——改一个必须同时改另一个",
+		t.Fatalf("Number of retreats (%d) is inconsistent with the maximum number of attempts (%d - one must be changed simultaneously",
 			len(notifyBackoff), db.MaxNotifyAttempts)
 	}
 	// The retreat intervals must be consistent, otherwise repeats will become more frequent and the
 	// restrictions will worsen.
 	for i := 1; i < len(notifyBackoff); i++ {
 		if notifyBackoff[i] < notifyBackoff[i-1] {
-			t.Fatalf("退避间隔必须单调不减：第 %d 档 %v < 第 %d 档 %v",
+			t.Fatalf("Avoidance intervals must be singled out: %d %v < %d %v",
 				i, notifyBackoff[i], i-1, notifyBackoff[i-1])
 		}
 	}
@@ -873,25 +873,25 @@ func TestNotifyRateLimitDoesNotConsumeRetryBudget(t *testing.T) {
 	now := time.Now()
 	// 1 per minute: up to 1 when the drum is full.
 	if got := n.takeTokens(1, 1, notifyMaxSendsPerChannelPerTick, now); got != 1 {
-		t.Fatalf("满桶时每分钟 1 条应取 1 个令牌，得到 %d", got)
+		t.Fatalf("One medal per minute at full drum, get %d", got)
 	}
 	if got := n.takeTokens(1, 1, notifyMaxSendsPerChannelPerTick, now.Add(time.Millisecond)); got != 0 {
-		t.Fatalf("令牌耗尽后应立即返回 0，得到 %d", got)
+		t.Fatalf("Return to 0 as soon as the medal is exhausted, get %d", got)
 	}
 	if got := n.takeTokens(1, 1, notifyMaxSendsPerChannelPerTick, now.Add(30*time.Second)); got != 0 {
-		t.Fatalf("半程不应补满一个令牌，得到 %d", got)
+		t.Fatalf("The halfway should not be filled with a token, get %d", got)
 	}
 	if got := n.takeTokens(1, 1, notifyMaxSendsPerChannelPerTick, now.Add(time.Minute)); got != 1 {
-		t.Fatalf("满一个周期应补回 1 个令牌，得到 %d", got)
+		t.Fatalf("One medal to be restored after a full cycle, get %d", got)
 	}
 	// Unlimited flow channels run at a limited upper limit, avoiding the single wheel being dragged
 	// by infinite backlog.
 	if got := n.takeTokens(2, 0, notifyUnlimitedBurstPerTick+10, now); got != notifyUnlimitedBurstPerTick {
-		t.Fatalf("不限流应返回每轮上限 %d，得到 %d", notifyUnlimitedBurstPerTick, got)
+		t.Fatalf("Notrate Limiteding should return the ceiling per round %d, get %d", notifyUnlimitedBurstPerTick, got)
 	}
 	// The token buckets between channels are independent of each other.
 	if got := n.takeTokens(1, 1, notifyMaxSendsPerChannelPerTick, now.Add(time.Millisecond)); got != 0 {
-		t.Fatalf("渠道 1 的桶应仍然为空，得到 %d", got)
+		t.Fatalf("Channel 1 drums should remain empty, get %d", got)
 	}
 }
 
@@ -905,22 +905,22 @@ func TestNotifyTakeTokensKeepsUnusedTokens(t *testing.T) {
 	now := time.Now()
 	// The barrel is initially full (100), but only 5 are available for this round.
 	if got := n.takeTokens(1, 100, 5, now); got != 5 {
-		t.Fatalf("want=5 时应恰好取 5 个令牌，得到 %d", got)
+		t.Fatalf("♪ want=5 should pick up 5 medals, get %d", got)
 	}
 	// The key assertion is that the remaining 95 must remain in the barrels, not be emptied.
 	if got := n.takeTokens(1, 100, 95, now); got != 95 {
-		t.Fatalf("剩余令牌应仍可取用（期望 95），得到 %d——桶被整轮抽空了", got)
+		t.Fatalf("The remaining token should still be available (expected 95), get %d - the drums are empty in full wheels.", got)
 	}
 	if got := n.takeTokens(1, 100, 1, now); got != 0 {
-		t.Fatalf("桶已取尽，应返回 0，得到 %d", got)
+		t.Fatalf("Drums are exhausted and should return 0, get %d", got)
 	}
 	// want<=0 should not deduct any tokens (no empty ship charge).
 	n2 := &Notifier{buckets: map[int64]*notifyBucket{}}
 	if got := n2.takeTokens(1, 20, 0, now); got != 0 {
-		t.Fatalf("want=0 应返回 0，得到 %d", got)
+		t.Fatalf("=0 should return 0, get %d", got)
 	}
 	if got := n2.takeTokens(1, 20, 20, now); got != 20 {
-		t.Fatalf("want=0 的那次不该消耗令牌，应仍可取满 20，得到 %d", got)
+		t.Fatalf("The one that wanted = 0 shouldn't have consumed the medals should still be full 20, get %d", got)
 	}
 }
 
@@ -938,17 +938,17 @@ func TestDigestTickPlanDecouplesBatchSizeFromSendBudget(t *testing.T) {
 	// Batch = one message = one request = one token. The token unit is a message, not a
 	// vulnerability.
 	if tokens != 1 {
-		t.Fatalf("汇总一批只发一条消息，应恰好消耗 1 个令牌，得到 %d", tokens)
+		t.Fatalf("A collection of only one message should just consume a token, get %d", tokens)
 	}
 	if claimLimit != db.MaxDigestBatchSize {
-		t.Fatalf("汇总批次大小应为内存上界 db.MaxDigestBatchSize=%d，得到 %d",
+		t.Fatalf("The aggregate batch size should be the upper limit of memory db.MaxDigestBatchSize=%d, to get %d",
 			db.MaxDigestBatchSize, claimLimit)
 	}
 	// The key relationship: the size of the batch must be much larger than the budget requested for
 	// each round.
 	if claimLimit <= notifyMaxSendsPerChannelPerTick {
-		t.Fatalf("汇总批次大小 %d 不应受每轮请求预算 %d 约束——"+
-			"请求预算是由租约倒推的「发几次请求」，与「一批装几条漏洞」是两个量纲",
+		t.Fatalf("Summary batch size %d should not be subject to the budget request per round %d -"+
+			"The budget request is a \"number of requests\" pushed backwards by the lease, and the \"package of vulnerabilities\" are two orders.",
 			claimLimit, notifyMaxSendsPerChannelPerTick)
 	}
 }
@@ -962,9 +962,9 @@ func TestDigestTickPlanDecouplesBatchSizeFromSendBudget(t *testing.T) {
 func TestNotifyTickBudgetFitsWithinLease(t *testing.T) {
 	worst := time.Duration(notifyMaxSendsPerChannelPerTick) * notifySendTimeout
 	if worst >= notifyLease {
-		t.Fatalf("单渠道一轮的最坏耗时 %v 不应达到或超过租约 %v"+
+		t.Fatalf("The worst time-consuming single-channel round %v should not meet or exceed the lease %v"+
 			"（notifyMaxSendsPerChannelPerTick=%d × notifySendTimeout=%v）——"+
-			"改这三个常量中的任意一个都要同步检查另外两个",
+			"Either of these three constants has to be checked simultaneously.",
 			worst, notifyLease, notifyMaxSendsPerChannelPerTick, notifySendTimeout)
 	}
 }

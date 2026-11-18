@@ -41,17 +41,17 @@ func (emailChannel) DestinationKeys() []string { return []string{"host", "port",
 
 func (emailChannel) Validate(cfg map[string]any) error {
 	if cfgString(cfg, "host") == "" {
-		return errors.New("缺少 SMTP 服务器地址")
+		return errors.New("missing SMTP server address")
 	}
 	port := cfgInt(cfg, "port")
 	if port <= 0 || port > 65535 {
-		return errors.New("SMTP 端口无效（应为 1-65535）")
+		return errors.New("SMTP Port Invalid (should read 1-65535)")
 	}
 	if cfgString(cfg, "from") == "" {
-		return errors.New("缺少发件人地址")
+		return errors.New("sender address is required")
 	}
 	if len(cfgStrings(cfg, "to")) == 0 {
-		return errors.New("至少需要一个收件人地址")
+		return errors.New("at least one recipient address is required")
 	}
 	return nil
 }
@@ -85,7 +85,7 @@ func (c emailChannel) Send(ctx context.Context, cfg map[string]any, m Message) (
 	if !implicitTLS {
 		if ok, _ := client.Extension("STARTTLS"); ok {
 			if err := client.StartTLS(&tls.Config{ServerName: host, MinVersion: tls.VersionTLS12}); err != nil {
-				return 0, fmt.Errorf("STARTTLS 失败: %w", err)
+				return 0, fmt.Errorf("START TLS Failed: %w", err)
 			}
 		}
 	}
@@ -96,28 +96,28 @@ func (c emailChannel) Send(ctx context.Context, cfg map[string]any, m Message) (
 			// bypassed, but it needs to be translated clearly — otherwise users will see
 			// "unencrypted connection" and not know what to do.
 			if strings.Contains(err.Error(), "unencrypted connection") {
-				return 0, Permanent(fmt.Errorf("拒发凭据：连接未加密。请启用 TLS，或改用 465 端口(隐式 TLS)，或把「启用 TLS」勾上 (%w)", err))
+				return 0, Permanent(fmt.Errorf("Refusal of proof: Connection unencrypted. Enable TLS, or switch to 465 port (invisible TLS), or hook the \" enabled TLS\" on (%w)", err))
 			}
-			return 0, Permanent(fmt.Errorf("SMTP 认证失败: %w", err))
+			return 0, Permanent(fmt.Errorf("SMTP authentication failed: %w", err))
 		}
 	}
 	if err := client.Mail(from); err != nil {
-		return 0, smtpStageError(fmt.Sprintf("发件人 %s 被拒", from), err)
+		return 0, smtpStageError(fmt.Sprintf("Sender %s denied", from), err)
 	}
 	for _, rcpt := range to {
 		if err := client.Rcpt(rcpt); err != nil {
-			return 0, smtpStageError(fmt.Sprintf("收件人 %s 被拒", rcpt), err)
+			return 0, smtpStageError(fmt.Sprintf("Recipient %s denied", rcpt), err)
 		}
 	}
 	w, err := client.Data()
 	if err != nil {
-		return 0, fmt.Errorf("SMTP DATA 失败: %w", err)
+		return 0, fmt.Errorf("SMTP DATA failed: %w", err)
 	}
 	if _, err := w.Write([]byte(msg)); err != nil {
-		return 0, fmt.Errorf("写入邮件正文失败: %w", err)
+		return 0, fmt.Errorf("write email body: %w", err)
 	}
 	if err := w.Close(); err != nil {
-		return 0, fmt.Errorf("提交邮件失败: %w", err)
+		return 0, fmt.Errorf("submit email: %w", err)
 	}
 	// Quit failure does not affect the fact that "mail has been received by the server", so its
 	// error is ignored.
@@ -152,13 +152,13 @@ func emailDial(ctx context.Context, addr, host string, implicitTLS bool) (*smtp.
 		conn, err = d.DialContext(ctx, "tcp", addr)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("连接 SMTP 服务器失败: %w", err)
+		return nil, fmt.Errorf("connect to SMTP server: %w", err)
 	}
 	_ = conn.SetDeadline(time.Now().Add(emailSessionTimeout))
 	client, err := smtp.NewClient(conn, host)
 	if err != nil {
 		conn.Close()
-		return nil, fmt.Errorf("SMTP 握手失败: %w", err)
+		return nil, fmt.Errorf("SMTP handshake failed: %w", err)
 	}
 	return client, nil
 }

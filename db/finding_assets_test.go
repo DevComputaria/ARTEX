@@ -55,7 +55,7 @@ func TestBuildFindingAssetTree(t *testing.T) {
 	}
 	defer d.Close()
 
-	tk, err := d.CreateTask("资产树测试", "目标", nil, 0, 0)
+	tk, err := d.CreateTask("Asset Tree Test", "Objective", nil, 0, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,16 +80,16 @@ func TestBuildFindingAssetTree(t *testing.T) {
 
 	// The discovery is only hung on the deepest endpoint, and the ancestor chain is filled by the
 	// tree itself.
-	if _, err := d.AddFinding(tk.ID, 0, "XSS", "反射型 XSS", "high", "s", "e", "w", []int64{epID}); err != nil {
+	if _, err := d.AddFinding(tk.ID, 0, "XSS", "Reflected XSS", "high", "s", "e", "w", []int64{epID}); err != nil {
 		t.Fatal(err)
 	}
 	// A line directly attached to the service, used to validate the difference between Self and
 	// Total.
-	if _, err := d.AddFinding(tk.ID, 0, "Info", "信息泄露", "low", "s", "e", "w", []int64{svcID}); err != nil {
+	if _, err := d.AddFinding(tk.ID, 0, "Info", "Information leaks", "low", "s", "e", "w", []int64{svcID}); err != nil {
 		t.Fatal(err)
 	}
 	// Asset row does not exist (deleted asset) → Unlinked bucket.
-	if _, err := d.AddFinding(tk.ID, 0, "Misc", "孤儿", "medium", "s", "e", "w", []int64{999000111}); err != nil {
+	if _, err := d.AddFinding(tk.ID, 0, "Misc", "Orphans", "medium", "s", "e", "w", []int64{999000111}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -133,7 +133,7 @@ func TestBuildFindingAssetTree(t *testing.T) {
 		t.Errorf("root totals: want 2/high1/low1, got %d/high%d/low%d", rootNode.Total, rootNode.High, rootNode.Low)
 	}
 	if rootNode.Self != 0 {
-		t.Errorf("root self: want 0 (只是祖先), got %d", rootNode.Self)
+		t.Errorf("root self: want 0, got %d", rootNode.Self)
 	}
 	if svcNode.Total != 2 || svcNode.Self != 1 {
 		t.Errorf("service total/self: want 2/1, got %d/%d", svcNode.Total, svcNode.Self)
@@ -165,7 +165,7 @@ func TestFindingAssetScopeFilter(t *testing.T) {
 	}
 	defer d.Close()
 
-	tk, err := d.CreateTask("资产筛选测试", "目标", nil, 0, 0)
+	tk, err := d.CreateTask("Asset Filter Test", "Objective", nil, 0, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,20 +179,20 @@ func TestFindingAssetScopeFilter(t *testing.T) {
 	subID := seedTreeAsset(t, d, "subdomain", map[string]any{"domain": sub, "root_domain": root})
 	otherID := seedTreeAsset(t, d, "root_domain", map[string]any{"domain": other, "root_domain": other})
 
-	if _, err := d.AddFinding(tk.ID, 0, "A", "子域名上的", "high", "s", "e", "w", []int64{subID}); err != nil {
+	if _, err := d.AddFinding(tk.ID, 0, "A", "On subdomain name", "high", "s", "e", "w", []int64{subID}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := d.AddFinding(tk.ID, 0, "B", "别的根域名上的", "high", "s", "e", "w", []int64{otherID}); err != nil {
+	if _, err := d.AddFinding(tk.ID, 0, "B", "On other root domain names.", "high", "s", "e", "w", []int64{otherID}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := d.AddFinding(tk.ID, 0, "C", "没有资产的", "high", "s", "e", "w", nil); err != nil {
+	if _, err := d.AddFinding(tk.ID, 0, "C", "There's no setup.", "high", "s", "e", "w", nil); err != nil {
 		t.Fatal(err)
 	}
 	// The discovery of a pointer to a deleted asset is "unassociated" as well as an empty asset_ids
 	// — the tree's bucket collapses it, and the list filtering must also find out that the two
 	// gauge discrepancies will make the number on the bucket greater than the number of bars after
 	// the pointer is opened.
-	if _, err := d.AddFinding(tk.ID, 0, "D", "资产已删除", "high", "s", "e", "w", []int64{999000333}); err != nil {
+	if _, err := d.AddFinding(tk.ID, 0, "D", "Asset deleted", "high", "s", "e", "w", []int64{999000333}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -202,11 +202,11 @@ func TestFindingAssetScopeFilter(t *testing.T) {
 		scope string
 		want  int
 	}{
-		{"整棵子树", assetKey(rootID), 1},      // The root domain name is the domain name of the website.
-		{"叶子节点", assetKey(subID), 1},       // Subdomain itself
-		{"另一棵树", assetKey(otherID), 1},     // Non-conformism
-		{"未关联", FindingUnassignedAsset, 2}, // asset_ids is empty + pointing to deleted assets
-		{"不存在的节点", "a:999000222", 0},       // No node under current filtering → Empty results, not unfiltered
+		{"The whole tree.", assetKey(rootID), 1},   // The root domain name is the domain name of the website.
+		{"Leaf Node", assetKey(subID), 1},          // Subdomain itself
+		{"Another tree.", assetKey(otherID), 1},    // Non-conformism
+		{"Unconnected", FindingUnassignedAsset, 2}, // asset_ids is empty + pointing to deleted assets
+		{"Node does not exist", "a:999000222", 0},  // No node under current filtering → Empty results, not unfiltered
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

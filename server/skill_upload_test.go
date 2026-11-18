@@ -18,11 +18,11 @@ import (
 )
 
 func TestValidSkillName(t *testing.T) {
-	ok := []string{"web-recon", "a", "nuclei2", "中文技能", "端口扫描-x", "日本語スキル"}
+	ok := []string{"web-recon", "a", "nuclei2", "café", "port-scan-x", "δοκιμή"}
 	bad := []string{
-		"", "Web-Recon", "-lead", "trail-", "dou--ble", "has space", "中文 技能",
-		"dot.name", "a/b", `a\b`, "..", ".", "中文/技能", "sk\x00ill", "中‮文",
-		strings.Repeat("a", 65), "1abc", "中文技能!",
+		"", "Web-Recon", "-lead", "trail-", "dou--ble", "has space", "UPPER",
+		"dot.name", "a/b", `a\b`, "..", ".", "skill/name", "sk\x00ill", "ab\u202ecd",
+		strings.Repeat("a", 65), "1abc", "skill!",
 	}
 	for _, n := range ok {
 		if !validSkillName(n) {
@@ -38,12 +38,12 @@ func TestValidSkillName(t *testing.T) {
 
 func TestSkillRelPath(t *testing.T) {
 	ok := map[string]string{
-		"SKILL.md":           "SKILL.md",
-		"scripts/run.py":     "scripts/run.py",
-		"参考/中文说明.md":         "参考/中文说明.md",
-		"references/a b.txt": "references/a b.txt",
-		"./SKILL.md":         "SKILL.md",
-		"assets/图片-1_v2.png": "assets/图片-1_v2.png",
+		"SKILL.md":                              "SKILL.md",
+		"scripts/run.py":                        "scripts/run.py",
+		"References/descriptions in Chinese.md": "References/descriptions in Chinese.md",
+		"references/a b.txt":                    "references/a b.txt",
+		"./SKILL.md":                            "SKILL.md",
+		"Assets/photo-1_v2.png":                 "Assets/photo-1_v2.png",
 	}
 	for in, want := range ok {
 		got, msg := skillRelPath(in)
@@ -53,7 +53,7 @@ func TestSkillRelPath(t *testing.T) {
 	}
 	bad := []string{
 		"", "../etc/passwd", "a/../../b", "/abs/path", "a//b", `..\..\x`,
-		"%2e%2e/x", "a\x00b", "中文 名.md", "中‮文.md", "a#b.md", "a?b.md",
+		"%2e%2e/x", "a\x00b", "name\u00a0with-space.md", "ab\u202ecd.md", "a#b.md", "a?b.md",
 		"a:b.md", string([]byte{0xd6, 0xd0}) + ".md", // Bare GBK bytes: illegal UTF-8
 		strings.Repeat("a", maxSkillPathLen+1),
 	}
@@ -127,26 +127,26 @@ func uploadZip(t *testing.T, skillDir string, filename string, data []byte) (*ht
 	return rr, out
 }
 
-const zhSkillMD = "---\nname: 中文技能\ndescription: 测试\n---\n正文\n"
+const zhSkillMD = "---\nname: localized-skill\ndescription: Test\n---\nMain text\n"
 
 // A zstd-compressed archive (WinZip's optional compression method) used to blow up with "zip:
 // unsupported compression"; it now installs like any Deflate archive.
 func TestUploadSkillZstdAndChineseNames(t *testing.T) {
 	dir := t.TempDir()
 	data := buildZip(t,
-		zipFile{name: "中文技能/SKILL.md", body: zhSkillMD, method: zipMethodZstd},
-		zipFile{name: "中文技能/参考/说明 文档.md", body: "参考", method: zipMethodZstd},
-		zipFile{name: "中文技能/scripts/run.py", body: "print(1)", method: zip.Deflate},
+		zipFile{name: "localized-skill/SKILL.md", body: zhSkillMD, method: zipMethodZstd},
+		zipFile{name: "localized-skill/references/notes.md", body: "References", method: zipMethodZstd},
+		zipFile{name: "localized-skill/scripts/run.py", body: "print(1)", method: zip.Deflate},
 	)
-	rr, out := uploadZip(t, dir, "中文技能.zip", data)
+	rr, out := uploadZip(t, dir, "localized-skill.zip", data)
 	if rr.Code != 201 {
 		t.Fatalf("status = %d, body = %s", rr.Code, rr.Body)
 	}
-	if out["name"] != "中文技能" {
-		t.Fatalf("name = %v, want 中文技能", out["name"])
+	if out["name"] != "localized-skill" {
+		t.Fatalf("name = %v, want localized-skill", out["name"])
 	}
-	for _, rel := range []string{"SKILL.md", "参考/说明 文档.md", "scripts/run.py"} {
-		if _, err := os.Stat(filepath.Join(dir, "中文技能", rel)); err != nil {
+	for _, rel := range []string{"SKILL.md", "references/notes.md", "scripts/run.py"} {
+		if _, err := os.Stat(filepath.Join(dir, "localized-skill", rel)); err != nil {
 			t.Errorf("missing extracted file %q: %v", rel, err)
 		}
 	}
@@ -164,17 +164,17 @@ func TestUploadSkillGBKNames(t *testing.T) {
 	}
 	dir := t.TempDir()
 	data := buildZip(t,
-		zipFile{name: gbk("中文技能/SKILL.md"), body: zhSkillMD, method: zip.Deflate, nonUTF8: true},
-		zipFile{name: gbk("中文技能/参考资料.md"), body: "内容", method: zip.Deflate, nonUTF8: true},
+		zipFile{name: gbk("localized-skill/SKILL.md"), body: zhSkillMD, method: zip.Deflate, nonUTF8: true},
+		zipFile{name: gbk("localized-skill/references.md"), body: "Contents", method: zip.Deflate, nonUTF8: true},
 	)
 	rr, out := uploadZip(t, dir, "skill.zip", data)
 	if rr.Code != 201 {
 		t.Fatalf("status = %d, body = %s", rr.Code, rr.Body)
 	}
-	if out["name"] != "中文技能" {
-		t.Fatalf("name = %v, want 中文技能", out["name"])
+	if out["name"] != "localized-skill" {
+		t.Fatalf("name = %v, want localized-skill", out["name"])
 	}
-	if _, err := os.Stat(filepath.Join(dir, "中文技能", "参考资料.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, "localized-skill", "references.md")); err != nil {
 		t.Errorf("GBK-named entry not extracted: %v", err)
 	}
 }
@@ -190,7 +190,7 @@ func TestUploadSkillUnsupportedMethod(t *testing.T) {
 		t.Fatalf("status = %d, want 400 (body %s)", rr.Code, rr.Body)
 	}
 	msg, _ := out["error"].(string)
-	if !strings.Contains(msg, "Deflate64") || !strings.Contains(msg, "不支持的压缩方式") {
+	if !strings.Contains(msg, "Deflate64") || !strings.Contains(msg, "unsupported compression") {
 		t.Fatalf("error = %q, want a Chinese message naming Deflate64", msg)
 	}
 }
@@ -211,8 +211,8 @@ func TestUploadSkillEncrypted(t *testing.T) {
 	if rr.Code != 400 {
 		t.Fatalf("status = %d, want 400 (body %s)", rr.Code, rr.Body)
 	}
-	if msg, _ := out["error"].(string); !strings.Contains(msg, "已加密") {
-		t.Fatalf("error = %q, want 加密 hint", msg)
+	if msg, _ := out["error"].(string); !strings.Contains(msg, "encrypted") {
+		t.Fatalf("ERror = %q, want encryption", msg)
 	}
 }
 
@@ -227,8 +227,8 @@ func TestUploadSkillRejectsTraversal(t *testing.T) {
 	if rr.Code != 400 {
 		t.Fatalf("status = %d, want 400 (body %s)", rr.Code, rr.Body)
 	}
-	if msg, _ := out["error"].(string); !strings.Contains(msg, "非法路径") {
-		t.Fatalf("error = %q, want 非法路径", msg)
+	if msg, _ := out["error"].(string); !strings.Contains(msg, "illegal paths") {
+		t.Fatalf("Error = %q, want illegal path", msg)
 	}
 	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
 		t.Fatalf("upload left files behind: %v", entries)
@@ -236,8 +236,8 @@ func TestUploadSkillRejectsTraversal(t *testing.T) {
 }
 
 func TestSkillNameFromFrontmatterQuoted(t *testing.T) {
-	got := skillNameFromFrontmatter([]byte("---\nname: \"中文技能\"\ndescription: x\n---\n"))
-	if got != "中文技能" {
-		t.Fatalf("name = %q, want 中文技能", got)
+	got := skillNameFromFrontmatter([]byte("---\nname: \"localized-skill\"\ndescription: x\n---\n"))
+	if got != "localized-skill" {
+		t.Fatalf("name = %q, want localized-skill", got)
 	}
 }

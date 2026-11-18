@@ -80,11 +80,11 @@ export function AccountSwitcher({
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={() => setPwOpen(true)}>
             <KeyRound />
-            修改密码
+            Alterar senha
           </DropdownMenuItem>
           <DropdownMenuItem onClick={handleLogout} className="text-destructive focus:text-destructive">
             <LogOut />
-            退出登录
+            Sair
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

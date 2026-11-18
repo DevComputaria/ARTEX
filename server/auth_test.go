@@ -31,13 +31,13 @@ func TestAuthStatusFailsClosedWhenDataSourceUnavailable(t *testing.T) {
 	s.authStatus(w, httptest.NewRequest("GET", "/api/auth/status", nil))
 
 	if w.Code != 503 {
-		t.Fatalf("status=%d want 503 (读失败被当成未初始化会把用户送去 /setup 覆盖密码); body=%s", w.Code, w.Body.String())
+		t.Fatalf("status=%d want 503 (read failure is treated as uninitialized and sends the user to /setup overriding the password); body= %s", w.Code, w.Body.String())
 	}
 	var payload struct {
 		Initialized *bool `json:"initialized"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &payload); err == nil && payload.Initialized != nil {
-		t.Fatalf("读失败时不应回答 initialized，得到 %v", *payload.Initialized)
+		t.Fatalf("Unable to answer when reading failed, get %v", *payload.Initialized)
 	}
 }
 
@@ -57,10 +57,10 @@ func TestAuthInitFailsClosedWhenDataSourceUnavailable(t *testing.T) {
 	s.authInit(w, httptest.NewRequest("POST", "/api/auth/init", body))
 
 	if w.Code != 503 {
-		t.Fatalf("status=%d want 503 (读失败时放行会让未认证请求覆盖已有密码); body=%s", w.Code, w.Body.String())
+		t.Fatalf("status=%d want 503 (release of a line on read failure will allow an unauthenticated request to override the existing password); body=%s", w.Code, w.Body.String())
 	}
 	if strings.Contains(w.Body.String(), "token") {
-		t.Fatalf("读失败时不应签发 token: %s", w.Body.String())
+		t.Fatalf("Token: %s", w.Body.String())
 	}
 }
 
@@ -69,13 +69,13 @@ func TestValidatePassword(t *testing.T) {
 		name, pw string
 		wantErr  bool
 	}{
-		{"空", "", true},
-		{"七位", "1234567", true},
-		{"八位", "12345678", false},
-		{"八个汉字按字符数而非字节数计", "密码密码密码密码", false},
-		{"三个汉字够 9 字节但只有 3 个字符", "密码强", true},
-		{"72 字节", strings.Repeat("a", 72), false},
-		{"73 字节超出 bcrypt 上限", strings.Repeat("a", 73), true},
+		{"Empty", "", true},
+		{"Seven.", "1234567", true},
+		{"Eight.", "12345678", false},
+		{"Eight multibyte characters are counted as characters, not bytes", "éééééééé", false},
+		{"Three multibyte characters exceed eight bytes but are only three characters", "ééé", true},
+		{"72 bytes", strings.Repeat("a", 72), false},
+		{"73 bytes above bcrypt", strings.Repeat("a", 73), true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := validatePassword(tc.pw); (got != "") != tc.wantErr {

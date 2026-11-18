@@ -69,7 +69,7 @@ func NewClient(proxy string) *http.Client {
 		Timeout:   30 * time.Minute, // Downloading the entire package, not dead by request-level timeout
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= 10 {
-				return fmt.Errorf("重定向次数过多")
+				return fmt.Errorf("Too often reoriented")
 			}
 			return checkURL(req.URL)
 		},
@@ -79,10 +79,10 @@ func NewClient(proxy string) *http.Client {
 // checkURL enforces https + domain name whitelisting.
 func checkURL(u *url.URL) error {
 	if u.Scheme != "https" {
-		return fmt.Errorf("拒绝非 HTTPS 地址: %s", u.Scheme+"://"+u.Host)
+		return fmt.Errorf("Reject non HTTPS address: %s", u.Scheme+"://"+u.Host)
 	}
 	if !allowedHosts[strings.ToLower(u.Hostname())] {
-		return fmt.Errorf("拒绝非 GitHub 域名: %s", u.Hostname())
+		return fmt.Errorf("Deny non-GitHub domain name: %s", u.Hostname())
 	}
 	return nil
 }
@@ -101,7 +101,7 @@ func FetchLatest(ctx context.Context, c *http.Client) (*Release, error) {
 
 	resp, err := c.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("访问 GitHub 失败（可在系统设置里配置全局代理）: %w", err)
+		return nil, fmt.Errorf("Failed to access GitHub (global agent can be configured in system settings): %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -109,19 +109,19 @@ func FetchLatest(ctx context.Context, c *http.Client) (*Release, error) {
 	case resp.StatusCode == http.StatusForbidden, resp.StatusCode == http.StatusTooManyRequests:
 		// The unauthenticated GitHub API is 60 times per IP per hour, which is easy to crash when
 		// sharing export IPs.
-		return nil, fmt.Errorf("GitHub 接口限流（每小时 60 次），请稍后再试")
+		return nil, fmt.Errorf("GitHub interface ratte limiting (60 times per hour), please try again later")
 	case resp.StatusCode == http.StatusNotFound:
-		return nil, fmt.Errorf("仓库 %s 尚未发布任何正式版本", Repo)
+		return nil, fmt.Errorf("Repository %s has not yet been published in any official version", Repo)
 	case resp.StatusCode != http.StatusOK:
-		return nil, fmt.Errorf("GitHub 返回 %d", resp.StatusCode)
+		return nil, fmt.Errorf("GitHub returns %d", resp.StatusCode)
 	}
 
 	var rel Release
 	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
-		return nil, fmt.Errorf("解析 Release 失败: %w", err)
+		return nil, fmt.Errorf("Parsing Release failed: %w", err)
 	}
 	if strings.TrimSpace(rel.TagName) == "" {
-		return nil, fmt.Errorf("Release 缺少 tag")
+		return nil, fmt.Errorf("Redease Missing Tag")
 	}
 	return &rel, nil
 }

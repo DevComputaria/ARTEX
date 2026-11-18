@@ -16,40 +16,40 @@ func TestMatchAssetInterceptRules(t *testing.T) {
 		want    bool
 		wantVal string
 	}{
-		{"内置模糊政府域名命中", []AssetInterceptRule{rule("fuzzy_domain", ".gov.cn", true)},
+		{"Built-in blurring government domain names", []AssetInterceptRule{rule("fuzzy_domain", ".gov.cn", true)},
 			[]string{"www.beijing.gov.cn"}, nil, nil, true, "www.beijing.gov.cn"},
-		{"模糊教育域名命中", []AssetInterceptRule{rule("fuzzy_domain", ".edu", true)},
+		{"Blur education domain hit", []AssetInterceptRule{rule("fuzzy_domain", ".edu", true)},
 			[]string{"mit.edu"}, nil, nil, true, "mit.edu"},
-		{"全等域名命中大小写不敏感", []AssetInterceptRule{rule("exact_domain", "Example.com", true)},
+		{"The full domain is insensitive to the case.", []AssetInterceptRule{rule("exact_domain", "Example.com", true)},
 			[]string{"example.com"}, nil, nil, true, "example.com"},
-		{"全等域名不命中子域", []AssetInterceptRule{rule("exact_domain", "example.com", true)},
+		{"Full domain name does not hit the sub-area", []AssetInterceptRule{rule("exact_domain", "example.com", true)},
 			[]string{"a.example.com"}, nil, nil, false, ""},
-		{"全等IP命中", []AssetInterceptRule{rule("exact_ip", "203.0.113.5", true)},
+		{"All waiting for IP hits.", []AssetInterceptRule{rule("exact_ip", "203.0.113.5", true)},
 			nil, []string{"203.0.113.5"}, nil, true, "203.0.113.5"},
-		{"模糊IP前缀命中", []AssetInterceptRule{rule("fuzzy_ip", "203.0.113.", true)},
+		{"Fuzzy IP prefix hit", []AssetInterceptRule{rule("fuzzy_ip", "203.0.113.", true)},
 			nil, []string{"203.0.113.99"}, nil, true, "203.0.113.99"},
-		{"CIDR 命中", []AssetInterceptRule{rule("cidr", "192.168.0.0/16", true)},
+		{"CIDR hit", []AssetInterceptRule{rule("cidr", "192.168.0.0/16", true)},
 			nil, []string{"192.168.5.20"}, nil, true, "192.168.5.20"},
-		{"CIDR 不命中", []AssetInterceptRule{rule("cidr", "192.168.0.0/16", true)},
+		{"CIDR missed.", []AssetInterceptRule{rule("cidr", "192.168.0.0/16", true)},
 			nil, []string{"10.0.0.1"}, nil, false, ""},
-		{"全等URL命中", []AssetInterceptRule{rule("exact_url", "https://a.gov.cn/login", true)},
+		{"Full-scale URL hit", []AssetInterceptRule{rule("exact_url", "https://a.gov.cn/login", true)},
 			nil, nil, []string{"https://a.gov.cn/login"}, true, "https://a.gov.cn/login"},
-		{"模糊URL命中路径", []AssetInterceptRule{rule("fuzzy_url", "/admin", true)},
+		{"Fuzzy URL Hit Path", []AssetInterceptRule{rule("fuzzy_url", "/admin", true)},
 			nil, nil, []string{"https://x.com/admin/panel"}, true, "https://x.com/admin/panel"},
-		{"禁用规则不命中", []AssetInterceptRule{rule("fuzzy_domain", ".gov.cn", false)},
+		{"Disable rules missed", []AssetInterceptRule{rule("fuzzy_domain", ".gov.cn", false)},
 			[]string{"www.gov.cn"}, nil, nil, false, ""},
-		{"无规则不命中", nil, []string{"www.gov.cn"}, nil, nil, false, ""},
-		{"空pattern不命中", []AssetInterceptRule{rule("fuzzy_domain", "  ", true)},
+		{"No rules, no hits.", nil, []string{"www.gov.cn"}, nil, nil, false, ""},
+		{"Emptypattern missed.", []AssetInterceptRule{rule("fuzzy_domain", "  ", true)},
 			[]string{"www.gov.cn"}, nil, nil, false, ""},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			r, val, ok := MatchAssetInterceptRules(c.rules, c.domains, c.ips, c.urls)
 			if ok != c.want {
-				t.Fatalf("命中 = %v, 期望 %v (rule=%+v)", ok, c.want, r)
+				t.Fatalf("Hit = %v, expectation %v (rule =%+v)", ok, c.want, r)
 			}
 			if ok && val != c.wantVal {
-				t.Fatalf("命中值 = %q, 期望 %q", val, c.wantVal)
+				t.Fatalf("Hit value = %q, expected %q", val, c.wantVal)
 			}
 		})
 	}
@@ -61,32 +61,32 @@ func TestEvaluateAssetGate(t *testing.T) {
 
 	// 1. Hit interception rule → Reject (interception reasons take precedence).
 	if d := EvaluateAssetGate(block, allow, []string{"www.gov.cn"}, nil, nil); d.Allowed {
-		t.Fatal("命中拦截规则应被拒绝")
+		t.Fatal("The intercept rule should be denied.")
 	}
 
 	// 2. Intercept not hit, allowed rule but not hit → refused (not allowed).
 	d := EvaluateAssetGate(block, allow, []string{"foo.other.com"}, nil, nil)
 	if d.Allowed {
-		t.Fatal("有白名单且不命中应被拒绝")
+		t.Fatal("There's a white list, and if you don't hit it, it should be rejected.")
 	}
 	if d.Reason == "" {
-		t.Fatal("拒绝应带原因")
+		t.Fatal("Rejection should be accompanied by reasons")
 	}
 
 	// 3. Unhit block, hit allow rule → release.
 	if d := EvaluateAssetGate(block, allow, []string{"api.example.com"}, nil, nil); !d.Allowed {
-		t.Fatal("命中白名单应放行")
+		t.Fatal("The white list should be released.")
 	}
 
 	// 4. No allow rules (whitelist not enabled) → blocked and released without hit.
 	if d := EvaluateAssetGate(block, nil, []string{"foo.other.com"}, nil, nil); !d.Allowed {
-		t.Fatal("无白名单时未命中拦截应放行")
+		t.Fatal("Interception without a white list should be allowed.")
 	}
 
 	// 5. Allow rules all disabled → Consider whitelisting not enabled, leave.
 	disabledAllow := []AssetInterceptRule{rule("fuzzy_domain", "example.com", false)}
 	if d := EvaluateAssetGate(nil, disabledAllow, []string{"foo.other.com"}, nil, nil); !d.Allowed {
-		t.Fatal("白名单全禁用时应放行")
+		t.Fatal("When the white list is completely disabled")
 	}
 
 	// 6. Intercept over allow: the same target is both intercepted and allowed → denied.
@@ -95,7 +95,7 @@ func TestEvaluateAssetGate(t *testing.T) {
 		[]AssetInterceptRule{rule("fuzzy_domain", ".gov.cn", true)},
 		[]string{"www.gov.cn"}, nil, nil,
 	); d.Allowed {
-		t.Fatal("拦截应优先于允许")
+		t.Fatal("Interception should take precedence over permission.")
 	}
 }
 
@@ -114,11 +114,11 @@ func TestAssetInterceptCandidates(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Fatalf("URL host 未拆入域名候选: %v", domains)
+		t.Fatalf("URL Host undismantled domain name candidate: %v", domains)
 	}
 	r, _, ok := MatchAssetInterceptRules([]AssetInterceptRule{rule("fuzzy_domain", ".gov.cn", true)}, domains, nil, urls)
 	if !ok {
-		t.Fatalf("仅带 URL 的政府服务资产应被 fuzzy_domain 命中, rule=%+v", r)
+		t.Fatalf("Government service assets with only URL should be hit by fuzzy_domain, rule=%+v", r)
 	}
 
 	// The URL host is the IP that should be included in the IP candidates, which can be hit by
@@ -126,6 +126,6 @@ func TestAssetInterceptCandidates(t *testing.T) {
 	b := &Asset{Type: "service", URL: "http://10.1.2.3/x"}
 	_, ips, _ := b.interceptCandidates()
 	if r, _, ok := MatchAssetInterceptRules([]AssetInterceptRule{rule("cidr", "10.0.0.0/8", true)}, nil, ips, nil); !ok {
-		t.Fatalf("URL 中的 IP 应被 CIDR 命中, ips=%v rule=%+v", ips, r)
+		t.Fatalf("IP in URL should be hit by CIDR, ips=%v rule=%+v", ips, r)
 	}
 }

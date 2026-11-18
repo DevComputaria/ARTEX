@@ -680,7 +680,7 @@ CREATE TRIGGER trg_task_asset_links_upd BEFORE UPDATE ON task_asset_links
 CREATE OR REPLACE FUNCTION sync_task_asset_links() RETURNS trigger AS $$
 BEGIN
     INSERT INTO task_asset_links(task_id, asset_id, source, source_summary)
-    SELECT task.id, NEW.id, 'system', '任务执行期间自动关联'
+    SELECT task.id, NEW.id, 'system', 'Automatically associated during task execution'
     FROM unnest(NEW.task_ids) AS requested(task_id)
     JOIN tasks task ON task.id=requested.task_id AND task.deleted_at IS NULL
     ON CONFLICT (task_id, asset_id) DO NOTHING;
@@ -698,7 +698,7 @@ CREATE TRIGGER trg_assets_task_links AFTER INSERT OR UPDATE OF task_ids ON asset
 -- Existing installations receive an auditable legacy source without rewriting
 -- task_ids. Ignore stale array ids that no longer resolve to a live task.
 INSERT INTO task_asset_links(task_id, asset_id, source, source_summary)
-SELECT task.id, asset.id, 'legacy', '由历史任务资产关联迁移'
+SELECT task.id, asset.id, 'legacy', 'Migrated from a historical task-asset association'
 FROM assets asset
 CROSS JOIN LATERAL unnest(asset.task_ids) AS requested(task_id)
 JOIN tasks task ON task.id=requested.task_id AND task.deleted_at IS NULL
@@ -1092,7 +1092,7 @@ ALTER TABLE intercept_pending ADD COLUMN IF NOT EXISTS reason TEXT NOT NULL DEFA
 ALTER TABLE intercept_pending ADD COLUMN IF NOT EXISTS audit JSONB;
 ALTER TABLE intercept_pending ADD COLUMN IF NOT EXISTS decision_source TEXT NOT NULL DEFAULT '';
 UPDATE intercept_pending SET decision_source=CASE WHEN rule_id IS NOT NULL THEN 'rule'
- WHEN reason LIKE '[模型]%' THEN 'model' ELSE 'unknown' END WHERE decision_source='';
+ WHEN reason LIKE '[model]%' OR reason LIKE U&'[\6A21\578B]%' THEN 'model' ELSE 'unknown' END WHERE decision_source='';
 
 -- =====================================================================
 -- L. Vulnerability discovery persistence =====================================================
@@ -1152,7 +1152,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_finding_retests_active ON finding_retests(
 -- Delete sessions that retain retest records and release unfinished retest occupancy.
 CREATE OR REPLACE FUNCTION stop_deleted_conversation_retest() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
-    UPDATE finding_retests SET status='stopped', error='复测会话已删除', finished_at=now()
+    UPDATE finding_retests SET status='stopped', error='Retest session was deleted', finished_at=now()
     WHERE conversation_id=OLD.id AND status IN ('pending','running');
     RETURN OLD;
 END;

@@ -11,22 +11,22 @@ func TestParseFilterMalformedFallsBackToMatchAll(t *testing.T) {
 		name string
 		raw  string
 	}{
-		{"空输入", ""},
-		{"非法 JSON", `{not json`},
-		{"截断的 JSON", `{"min_severity":`},
-		{"类型不匹配", `{"min_severity": 123, "task_ids": "abc"}`},
-		{"顶层是数组", `[1,2,3]`},
+		{"Empty input", ""},
+		{"Illegal JSON", `{not json`},
+		{"Interrupted JSON", `{"min_severity":`},
+		{"Type does not match", `{"min_severity": 123, "task_ids": "abc"}`},
+		{"The top level is the array.", `[1,2,3]`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			f := ParseFilter([]byte(tc.raw))
 			if f.MinSeverity != "" || len(f.TaskIDs) != 0 || len(f.AssetIDs) != 0 {
-				t.Fatalf("畸形配置应退化为零值 Filter，得到 %+v", f)
+				t.Fatalf("Deform configuration should be converted to zero, Filter, get %+v", f)
 			}
 			// The zero-value Filter must hit any event.
 			ev := Snapshot{Kind: EventFindingCreated, Severity: "low", VulnClass: "XSS"}
 			if !Match(f, ev) {
-				t.Fatal("零值 Filter 应命中所有事件")
+				t.Fatal("Zero, Filter hits all events.")
 			}
 		})
 	}
@@ -58,7 +58,7 @@ func TestMatchSeverityThreshold(t *testing.T) {
 	for _, tc := range cases {
 		got := Match(Filter{MinSeverity: tc.min}, ev(tc.sev))
 		if got != tc.expect {
-			t.Errorf("min=%q sev=%q: 期望 %v 得到 %v", tc.min, tc.sev, tc.expect, got)
+			t.Errorf("Min = %q sev =%q: Desire %v Get %v", tc.min, tc.sev, tc.expect, got)
 		}
 	}
 }
@@ -69,26 +69,26 @@ func TestMatchScopeRestrictions(t *testing.T) {
 		Severity:  "high",
 		TaskID:    7,
 		AssetIDs:  []int64{10, 20},
-		VulnClass: "SQL注入",
+		VulnClass: "SQL Injection",
 	}
 	cases := []struct {
 		name   string
 		filter Filter
 		expect bool
 	}{
-		{"空范围=不限", Filter{}, true},
-		{"任务命中", Filter{TaskIDs: []int64{7}}, true},
-		{"任务未命中", Filter{TaskIDs: []int64{8}}, false},
-		{"任务多选含命中", Filter{TaskIDs: []int64{8, 7}}, true},
-		{"资产有交集", Filter{AssetIDs: []int64{20, 99}}, true},
-		{"资产无交集", Filter{AssetIDs: []int64{99}}, false},
-		{"任务与资产同时命中", Filter{TaskIDs: []int64{7}, AssetIDs: []int64{10}}, true},
-		{"任务命中但资产未命中", Filter{TaskIDs: []int64{7}, AssetIDs: []int64{99}}, false},
+		{"Empty range = unlimited", Filter{}, true},
+		{"Task's hit.", Filter{TaskIDs: []int64{7}}, true},
+		{"Task's not hit.", Filter{TaskIDs: []int64{8}}, false},
+		{"Task's got a lot of hits.", Filter{TaskIDs: []int64{8, 7}}, true},
+		{"There's a cross-section in the asset.", Filter{AssetIDs: []int64{20, 99}}, true},
+		{"Aset no intersection", Filter{AssetIDs: []int64{99}}, false},
+		{"Task hit it with an asset.", Filter{TaskIDs: []int64{7}, AssetIDs: []int64{10}}, true},
+		{"Task hit, but Aset didn't hit.", Filter{TaskIDs: []int64{7}, AssetIDs: []int64{99}}, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := Match(tc.filter, ev); got != tc.expect {
-				t.Errorf("期望 %v 得到 %v", tc.expect, got)
+				t.Errorf("Expect %v Get %v", tc.expect, got)
 			}
 		})
 	}
@@ -104,26 +104,26 @@ func TestMatchVulnClassKeywords(t *testing.T) {
 		class  string
 		expect bool
 	}{
-		{"include 为空=全收", Filter{}, "任意类型", true},
-		{"include 命中", Filter{VulnClassInclude: []string{"SQL"}}, "SQL注入", true},
-		{"include 未命中", Filter{VulnClassInclude: []string{"命令执行"}}, "SQL注入", false},
-		{"include 多词任一命中", Filter{VulnClassInclude: []string{"命令执行", "SQL"}}, "SQL注入", true},
-		{"大小写不敏感", Filter{VulnClassInclude: []string{"sql"}}, "SQL注入", true},
-		{"exclude 命中即排除", Filter{VulnClassExclude: []string{"信息泄露"}}, "信息泄露", false},
-		{"exclude 未命中则放行", Filter{VulnClassExclude: []string{"信息泄露"}}, "SQL注入", true},
+		{"Include is empty = all", Filter{}, "Any type", true},
+		{"Include hit", Filter{VulnClassInclude: []string{"SQL"}}, "SQL Injection", true},
+		{"Include missed.", Filter{VulnClassInclude: []string{"Command execution"}}, "SQL Injection", false},
+		{"Include, multiple words hit any of them.", Filter{VulnClassInclude: []string{"Command execution", "SQL"}}, "SQL Injection", true},
+		{"Case insensitive", Filter{VulnClassInclude: []string{"sql"}}, "SQL Injection", true},
+		{"Exclude by impact", Filter{VulnClassExclude: []string{"Information leaks"}}, "Information leaks", false},
+		{"Exclude Unhit Release", Filter{VulnClassExclude: []string{"Information leaks"}}, "SQL Injection", true},
 		// Exclusion takes precedence over inclusion: both should be out of the game.
-		{"排除优先于包含", Filter{
+		{"Exclusion over inclusion", Filter{
 			VulnClassInclude: []string{"SQL"},
-			VulnClassExclude: []string{"注入"},
-		}, "SQL注入", false},
+			VulnClassExclude: []string{"Injection"},
+		}, "SQL Injection", false},
 		// Blank keywords should be ignored, otherwise they degrade to "match all strings containing
 		// spaces".
-		{"空白关键词被忽略", Filter{VulnClassInclude: []string{"", "  "}}, "SQL注入", false},
+		{"Blank keyword ignored", Filter{VulnClassInclude: []string{"", "  "}}, "SQL Injection", false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := Match(tc.filter, ev(tc.class)); got != tc.expect {
-				t.Errorf("期望 %v 得到 %v", tc.expect, got)
+				t.Errorf("Expect %v Get %v", tc.expect, got)
 			}
 		})
 	}
@@ -134,14 +134,14 @@ func TestMatchStatusChangeRequiresOptIn(t *testing.T) {
 	// Default off: Most people say "push vulnerability" when they are talking about newly
 	// discovered vulnerabilities, not state-of-the-art.
 	if Match(Filter{MinSeverity: "low"}, ev) {
-		t.Fatal("状态变更事件在未开启时应被跳过")
+		t.Fatal("The state change event should be skipped when it is not opened")
 	}
 	if !Match(Filter{OnStatusChange: true}, ev) {
-		t.Fatal("开启 on_status_change 后状态变更事件应命中")
+		t.Fatal("Start on_status_change Post-state change event hit")
 	}
 	// The creation of events is not affected by on_status_change.
 	created := Snapshot{Kind: EventFindingCreated, Severity: "critical"}
 	if !Match(Filter{MinSeverity: "low"}, created) {
-		t.Fatal("创建事件不应依赖 on_status_change")
+		t.Fatal("Create event should not depend on on_status_change")
 	}
 }

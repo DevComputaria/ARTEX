@@ -68,7 +68,7 @@ func ValidMinSeverity(s string) bool {
 // entire channel unreadable.
 func (f Filter) Validate() error {
 	if !ValidMinSeverity(f.MinSeverity) {
-		return fmt.Errorf("最低级别 %q 无效，可选：low / medium / high / critical，或留空表示不限", f.MinSeverity)
+		return fmt.Errorf("Minimum level %q Invalid, optional: low/medium/high/critical or leave empty for unlimited", f.MinSeverity)
 	}
 	return nil
 }

@@ -44,34 +44,34 @@ func TestSoftDeleteIntent(t *testing.T) {
 		t.Skipf("postgres unavailable (%v) — skipping", err)
 	}
 	defer d.Close()
-	expID, err := d.CreateExploration("soft delete", "假删除")
+	expID, err := d.CreateExploration("soft delete", "Fake Delete")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer d.Exec(`DELETE FROM explorations WHERE id=$1`, expID)
 	es := d.Exploration(expID)
 
-	intent := mustIntent(t, es, "待删意图")
+	intent := mustIntent(t, es, "To be deletedint")
 	if err := es.SetIntentState(intent, "paused"); err != nil {
 		t.Fatal(err)
 	}
-	summary, err := es.SoftDeleteIntent(intent, "方向判断错误")
+	summary, err := es.SoftDeleteIntent(intent, "Directional error")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if summary != "待删意图" {
-		t.Fatalf("summary=%q, want 待删意图", summary)
+	if summary != "To be deletedint" {
+		t.Fatalf("%q, want to delete", summary)
 	}
 	n, err := es.GetNode(intent)
 	if err != nil || n == nil {
 		t.Fatalf("intent removed by soft delete: n=%+v err=%v", n, err)
 	}
-	if n.State != StateIntentDeleted || n.DeleteReason != "方向判断错误" {
-		t.Fatalf("state=%q delete_reason=%q, want deleted/方向判断错误", n.State, n.DeleteReason)
+	if n.State != StateIntentDeleted || n.DeleteReason != "Directional error" {
+		t.Fatalf("state=%q delete_reason = %q, want deleted / direction error", n.State, n.DeleteReason)
 	}
 	// Open intent also allows for false deletion.
-	openIntent := mustIntent(t, es, "待领意图")
-	if _, err := es.SoftDeleteIntent(openIntent, "方向不需要了"); err != nil {
+	openIntent := mustIntent(t, es, "To be indentated")
+	if _, err := es.SoftDeleteIntent(openIntent, "We don't need directions anymore."); err != nil {
 		t.Fatalf("soft delete open intent: %v", err)
 	}
 	if n, err := es.GetNode(openIntent); err != nil || n == nil || n.State != StateIntentDeleted {
@@ -79,7 +79,7 @@ func TestSoftDeleteIntent(t *testing.T) {
 	}
 
 	// Other statuses, such as deleted, cannot be faked.
-	if _, err := es.SoftDeleteIntent(intent, "再删"); err == nil {
+	if _, err := es.SoftDeleteIntent(intent, "And delete."); err == nil {
 		t.Fatal("soft-deleting an already-deleted intent unexpectedly succeeded")
 	}
 }
@@ -92,7 +92,7 @@ func TestHardDeleteCascadesExclusiveDescendants(t *testing.T) {
 		t.Skipf("postgres unavailable (%v) — skipping", err)
 	}
 	defer d.Close()
-	expID, err := d.CreateExploration("hard cascade", "级联删除")
+	expID, err := d.CreateExploration("hard cascade", "Cascades Delete")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,12 +100,12 @@ func TestHardDeleteCascadesExclusiveDescendants(t *testing.T) {
 	es := d.Exploration(expID)
 
 	// intent1 --yields--> fact1 --derived_from--> intent2 --yields--> fact2(leaf)
-	intent1 := mustIntent(t, es, "根意图")
-	fact1 := mustNode(t, es, KindFact, "事实1")
+	intent1 := mustIntent(t, es, "Root intent")
+	fact1 := mustNode(t, es, KindFact, "Fact 1")
 	mustLink(t, es, intent1, RelYields, fact1)
-	intent2 := mustIntent(t, es, "衍生意图")
+	intent2 := mustIntent(t, es, "derivative intent")
 	mustLink(t, es, fact1, RelDerivedFrom, intent2)
-	fact2 := mustNode(t, es, KindFact, "事实2")
+	fact2 := mustNode(t, es, KindFact, "Fact 2")
 	mustLink(t, es, intent2, RelYields, fact2)
 
 	cleanup, err := es.CancelIntent(intent1)
@@ -130,28 +130,28 @@ func TestHardDeletePreservesSharedAndGoal(t *testing.T) {
 		t.Skipf("postgres unavailable (%v) — skipping", err)
 	}
 	defer d.Close()
-	expID, err := d.CreateExploration("hard preserve", "保留共享/目标")
+	expID, err := d.CreateExploration("hard preserve", "Keep sharing/targets")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer d.Exec(`DELETE FROM explorations WHERE id=$1`, expID)
 	es := d.Exploration(expID)
 
-	goal, err := es.AddGoal(map[string]any{"text": "拿下后台"}, "human")
+	goal, err := es.AddGoal(map[string]any{"text": "Take the backstage."}, "human")
 	if err != nil {
 		t.Fatal(err)
 	}
 	// intent1 exclusively finds (proves goal), intent1 shares fact1 with intentX (fact1 derives
 	// intent2).
-	intent1 := mustIntent(t, es, "待删意图")
-	intentX := mustIntent(t, es, "旁路意图")
-	finding := mustNode(t, es, KindFinding, "漏洞")
+	intent1 := mustIntent(t, es, "To be deletedint")
+	intentX := mustIntent(t, es, "Sidewalk intient")
+	finding := mustNode(t, es, KindFinding, "vulnerabilitity")
 	mustLink(t, es, intent1, RelYields, finding)
 	mustLink(t, es, finding, RelProves, goal)
-	shared := mustNode(t, es, KindFact, "共享事实")
+	shared := mustNode(t, es, KindFact, "Sharing facts")
 	mustLink(t, es, intent1, RelYields, shared)
 	mustLink(t, es, intentX, RelYields, shared)
-	intent2 := mustIntent(t, es, "由共享事实衍生")
+	intent2 := mustIntent(t, es, "Derived from shared facts")
 	mustLink(t, es, shared, RelDerivedFrom, intent2)
 
 	cleanup, err := es.CancelIntent(intent1)

@@ -16,19 +16,19 @@ import (
 func AssetInterceptKindLabel(kind string) string {
 	switch kind {
 	case "exact_domain":
-		return "域名(全等)"
+		return "Domain name (full)"
 	case "exact_ip":
-		return "IP(全等)"
+		return "IP (full)"
 	case "exact_url":
-		return "URL(全等)"
+		return "URL (full)"
 	case "fuzzy_domain":
-		return "域名(模糊)"
+		return "Domain name (indistinct)"
 	case "fuzzy_ip":
-		return "IP(模糊)"
+		return "IP (indistinct)"
 	case "fuzzy_url":
-		return "URL(模糊)"
+		return "URL (indistinct)"
 	case "cidr":
-		return "CIDR 网段"
+		return "CIDR Network"
 	}
 	return kind
 }
@@ -36,7 +36,7 @@ func AssetInterceptKindLabel(kind string) string {
 // Reason Returns a readable line of reason for the hit, such as: Hit asset interception rule
 // [domain name (ambiguous):.gov.cn] (note).
 func (r AssetInterceptRule) Reason() string {
-	s := fmt.Sprintf("命中资产拦截规则 [%s: %s]", AssetInterceptKindLabel(r.Kind), r.Pattern)
+	s := fmt.Sprintf("Hitset interception rules [%s: %s", AssetInterceptKindLabel(r.Kind), r.Pattern)
 	if note := strings.TrimSpace(r.Note); note != "" {
 		s += "（" + note + "）"
 	}
@@ -161,7 +161,7 @@ func (a *Asset) InterceptLabel() string {
 	default:
 		target = fmt.Sprintf("#%d", a.ID)
 	}
-	return fmt.Sprintf("资产#%d[%s] %s", a.ID, a.Type, target)
+	return fmt.Sprintf("Asset#%d[%s %s", a.ID, a.Type, target)
 }
 
 // hasEnabledRule Determines whether any enabled rule exists in the rule set.
@@ -194,7 +194,7 @@ func EvaluateAssetGate(blockRules, allowRules []AssetInterceptRule, domains, ips
 	}
 	if hasEnabledRule(allowRules) {
 		if _, _, ok := MatchAssetInterceptRules(allowRules, domains, ips, urls); !ok {
-			return AssetGateDecision{Allowed: false, Reason: "不在任务允许(白名单)范围内，不允许测试"}
+			return AssetGateDecision{Allowed: false, Reason: "Not allowed in task, not allowed on the white list"}
 		}
 	}
 	return AssetGateDecision{Allowed: true}

@@ -149,16 +149,16 @@ func (s *AssetStore) AddAgentScope(taskID int64, kind, value, reason, source str
 	}
 	ts := TaskScope{TaskID: taskID, Kind: kind, Source: source, Reason: reason}
 	if taskID <= 0 {
-		return ts, fmt.Errorf("需要 task_id")
+		return ts, fmt.Errorf("Required task_id")
 	}
 	value = strings.TrimSpace(value)
 	if value == "" {
-		return ts, fmt.Errorf("value 不能为空")
+		return ts, fmt.Errorf("Value can't be empty.")
 	}
 	switch kind {
 	case "company":
 		if s.company == nil {
-			return ts, fmt.Errorf("company store 未启用")
+			return ts, fmt.Errorf("Company store is not enabled")
 		}
 		var comp *Company
 		var err error
@@ -171,7 +171,7 @@ func (s *AssetStore) AddAgentScope(taskID int64, kind, value, reason, source str
 			return ts, err
 		}
 		if comp == nil {
-			return ts, fmt.Errorf("company 不存在: %s（先用 list_companies 确认，或建好企业）", value)
+			return ts, fmt.Errorf("company does not exist: %s (confirm first with list_companies, or build the company)", value)
 		}
 		ts.CompanyID = &comp.ID
 	case "root_domain":
@@ -181,13 +181,13 @@ func (s *AssetStore) AddAgentScope(taskID int64, kind, value, reason, source str
 			root = d
 		}
 		if root == "" {
-			return ts, fmt.Errorf("无效根域: %s", value)
+			return ts, fmt.Errorf("Invalid root area: %s", value)
 		}
 		ts.Domain = root
 	case "subdomain":
 		d := DomainKey(stripHostPort(value))
 		if d == "" {
-			return ts, fmt.Errorf("无效子域: %s", value)
+			return ts, fmt.Errorf("Invalid subfield: %s", value)
 		}
 		ts.Domain = d
 	case "ip", "cidr":
@@ -199,10 +199,10 @@ func (s *AssetStore) AddAgentScope(taskID int64, kind, value, reason, source str
 			ts.Kind = "cidr"
 		}
 		if v == "" {
-			return ts, fmt.Errorf("无效 ip/cidr: %s", value)
+			return ts, fmt.Errorf("Invalid ip/cidr: %s", value)
 		}
 		if _, _, err := net.ParseCIDR(v); err != nil {
-			return ts, fmt.Errorf("无效 ip/cidr: %s", value)
+			return ts, fmt.Errorf("Invalid ip/cidr: %s", value)
 		}
 		ts.Net = v
 	case "icp", "keyword":
@@ -212,7 +212,7 @@ func (s *AssetStore) AddAgentScope(taskID int64, kind, value, reason, source str
 		}
 		ts.Value = parsed.Value
 	default:
-		return ts, fmt.Errorf("不支持的 kind: %s（company/root_domain/subdomain/ip/cidr/icp/keyword）", kind)
+		return ts, fmt.Errorf("Unsupported kind: %s (company/root_domain/subdomain/ip/cidr/icp/keyword)", kind)
 	}
 	if err := s.upsertTaskScope(ts); err != nil {
 		return ts, err

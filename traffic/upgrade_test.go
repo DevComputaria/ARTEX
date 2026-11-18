@@ -52,10 +52,10 @@ VALUES(?,?,?,'GET','/x','http://x/x',200,'text/html',0,9,?)`, row[0], 1700000000
 			t.Fatal(err)
 		}
 		if _, err := old.Exec(`INSERT INTO exchange_bodies(id,req_head,req_body,resp_head,resp_body)
-VALUES(?,'GET /x','','HTTP 200','老数据正文')`, row[0]); err != nil {
+VALUES(?,'GET /x','','HTTP 200','old data body')`, row[0]); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := old.Exec(`INSERT INTO ex_fts(rowid,content) VALUES(?,?)`, i+1, "老数据正文 secret-token"); err != nil {
+		if _, err := old.Exec(`INSERT INTO ex_fts(rowid,content) VALUES(?,?)`, i+1, "Old data body secret-token"); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -70,55 +70,55 @@ VALUES(?,'GET /x','','HTTP 200','老数据正文')`, row[0]); err != nil {
 	// New Version of the Website
 	tr, err := Open(dir, "127.0.0.1:0")
 	if err != nil {
-		t.Fatalf("新版本无法打开旧库: %v", err)
+		t.Fatalf("The new version cannot open the old library: %v", err)
 	}
 	defer tr.Close()
 
 	// 1. It must be the same document, not a new empty one that has been opened in secret
 	if st2, err := os.Stat(path); err != nil || st2.Size() == 0 {
-		t.Fatalf("原索引文件异常: size=%v err=%v", st2, err)
+		t.Fatalf("Original index file anomaly: size=%v err= %v", st2, err)
 	}
 	if entries, _ := os.ReadDir(filepath.Join(dir, "_index")); len(entries) > 3 {
 		for _, e := range entries {
-			t.Logf("_index 下: %s", e.Name())
+			t.Logf("_index Under: %s", e.Name())
 		}
-		t.Fatal("_index 下出现了预期外的文件，DSN 可能指向了别的库")
+		t.Fatal("_index shows off-the-job files. DSN may be pointing to another library.")
 	}
-	t.Logf("旧库 %d 字节，新版本接管后仍是同一文件", stat.Size())
+	t.Logf("Old library %d bytes, new version remains the same file after taking over", stat.Size())
 
 	// 2. Historical data is fully visible
 	n, err := tr.Count()
 	if err != nil || n != 3 {
-		t.Fatalf("Count=(%d,%v)，应为 (3,nil) —— 历史流量丢失", n, err)
+		t.Fatalf("Count=(%d,%v), want (3,nil) — historical traffic was lost", n, err)
 	}
 	// 3. The full-text index of history remains searchable
 	if tr.fts {
 		rows, err := tr.query("old.example.com", "", "secret-token", 0, 10)
 		if err != nil {
-			t.Fatalf("历史全文搜索失败: %v", err)
+			t.Fatalf("Failed to search for history full text: %v", err)
 		}
 		if len(rows) != 2 {
-			t.Fatalf("历史全文搜索命中 %d 条，应为 2", len(rows))
+			t.Fatalf("History full search hit %d bar should read 2", len(rows))
 		}
 	}
 	// 4. The historical text is still readable
 	if _, resp, err := tr.Get("1700000000-0001"); err != nil {
-		t.Fatalf("读取历史正文失败: %v", err)
+		t.Fatalf("Failed to read history text: %v", err)
 	} else if resp == "" {
-		t.Fatal("历史响应为空")
+		t.Fatal("Historical response is empty.")
 	}
 	// 5. Old vaults will not be mistaken for having incremental recovery enabled
 	if tr.incrementalVacuum {
-		t.Fatal("旧库被误判为已启用增量回收")
+		t.Fatal("Old library was misconstrued as active incremental recovery")
 	}
 	// 6. Deletion still works and recovery processes converge on the old repository
 	deleted, err := tr.DeleteHostsExact([]string{"old.example.com"})
 	if err != nil || deleted != 2 {
-		t.Fatalf("DeleteHostsExact=(%d,%v)，应为 (2,nil)", deleted, err)
+		t.Fatalf("DeleteHostsExact=(%d,%v), want (2,nil)", deleted, err)
 	}
 	tr.reaping.Wait()
 	if n, err := tr.Count(); err != nil || n != 1 {
-		t.Fatalf("删除后 Count=(%d,%v)，应为 (1,nil)", n, err)
+		t.Fatalf("Count after deletion=(%d,%v), want (1,nil)", n, err)
 	}
 	// 7. The line of the legacy path<>'' is not involved
 	var legacyPath string
@@ -126,7 +126,7 @@ VALUES(?,'GET /x','','HTTP 200','老数据正文')`, row[0]); err != nil {
 		t.Fatal(err)
 	}
 	if legacyPath == "" {
-		t.Fatal("legacy 行的 path 被清空了")
+		t.Fatal("Letacy, the path of the line is emptied.")
 	}
 }
 
@@ -141,7 +141,7 @@ func TestDowngradeToOldBinary(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !tr.incrementalVacuum {
-		t.Fatal("新库应启用增量回收")
+		t.Fatal("The new library should enable incremental recovery")
 	}
 	bulkRecord(tr, "keep.example.com", 5, 100*1024)
 	if err := tr.Close(); err != nil {
@@ -152,13 +152,13 @@ func TestDowngradeToOldBinary(t *testing.T) {
 	defer old.Close()
 	var n int
 	if err := old.QueryRow(`SELECT COUNT(*) FROM exchanges`).Scan(&n); err != nil || n != 5 {
-		t.Fatalf("旧版本读到 (%d,%v)，应为 (5,nil)", n, err)
+		t.Fatalf("legacy version read (%d,%v), want (5,nil)", n, err)
 	}
 	if _, err := old.Exec(`INSERT INTO exchanges(id,ts,host,method,url_template,url,status,content_type,req_len,resp_len,path)
 VALUES('x',1,'new.example.com','GET','/x','http://x/x',200,'',0,0,'')`); err != nil {
-		t.Fatalf("旧版本写入失败: %v", err)
+		t.Fatalf("Old version writing failed: %v", err)
 	}
 	if _, err := old.Exec(`DELETE FROM exchanges WHERE host='keep.example.com'`); err != nil {
-		t.Fatalf("旧版本删除失败: %v", err)
+		t.Fatalf("Old version deleted failed: %v", err)
 	}
 }

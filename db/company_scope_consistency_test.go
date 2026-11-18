@@ -172,12 +172,12 @@ func TestResolveAndRecomputeUseStableCompanyIDTieBreak(t *testing.T) {
 }
 
 func TestCompanyScopeLimitsAndCheckedErrors(t *testing.T) {
-	boundary := strings.Repeat("界", MaxCompanyScopeRawRunes)
+	boundary := strings.Repeat("x", MaxCompanyScopeRawRunes)
 	if err := ValidateCompanyScopeInputBounds([]ScopeInput{{Kind: "keyword", Value: boundary}}); err != nil {
 		t.Fatalf("exact raw rune boundary rejected: %v", err)
 	}
 	var validationErr *CompanyScopeValidationError
-	if err := ValidateCompanyScopeInputBounds([]ScopeInput{{Kind: "keyword", Value: boundary + "界"}}); !errors.As(err, &validationErr) {
+	if err := ValidateCompanyScopeInputBounds([]ScopeInput{{Kind: "keyword", Value: boundary + "x"}}); !errors.As(err, &validationErr) {
 		t.Fatalf("oversized raw value error=%v want CompanyScopeValidationError", err)
 	}
 	// There is no upper limit on the number of bars, only the length of a single bar is checked.

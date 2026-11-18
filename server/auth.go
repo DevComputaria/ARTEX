@@ -34,16 +34,16 @@ const (
 // These handlers should never be treated as "not set": authInit would therefore let the
 // "read-unable" pass when database errors occurred, allowing unauthenticated requests to override
 // existing administrator passwords.
-const errDataSourceUnavailable = "数据源暂时不可用，请稍后重试"
+const errDataSourceUnavailable = "Data source is not available for the time being, please retry"
 
 // validatePassword returns an empty string for acceptance, otherwise it returns a reason in Chinese
 // that can be displayed directly to the user.
 func validatePassword(pw string) string {
 	if utf8.RuneCountInString(pw) < minPasswordRunes {
-		return fmt.Sprintf("密码长度至少 %d 位", minPasswordRunes)
+		return fmt.Sprintf("Password length at least %d bit", minPasswordRunes)
 	}
 	if len(pw) > maxPasswordBytes {
-		return fmt.Sprintf("密码长度不能超过 %d 字节", maxPasswordBytes)
+		return fmt.Sprintf("Password length cannot exceed %d bytes", maxPasswordBytes)
 	}
 	return ""
 }
@@ -63,7 +63,7 @@ func loadOrCreateJWTKey(keyDir, dataDir string) ([]byte, error) {
 			if data, rerr := os.ReadFile(legacy); rerr == nil {
 				if werr := os.WriteFile(path, data, 0o600); werr == nil {
 					_ = os.Remove(legacy)
-					log.Printf("[auth] JWT key 已从 %s 迁移到 %s（移出可浏览工作区）", legacy, path)
+					log.Printf("[auth] JWT Key moved from %s to %s (Move out to browse workspace)", legacy, path)
 				}
 			}
 		}
@@ -82,7 +82,7 @@ func loadOrCreateJWTKey(keyDir, dataDir string) ([]byte, error) {
 	if err := os.WriteFile(path, buf, 0600); err != nil {
 		return nil, fmt.Errorf("write jwt key: %w", err)
 	}
-	log.Printf("[auth] 新 JWT key 已写入 %s", path)
+	log.Printf("[auth] New JWT Key is written %s", path)
 	return buf, nil
 }
 
@@ -129,11 +129,11 @@ func (s *Server) requireAuth(h http.Handler) http.Handler {
 		}
 		tok := extractToken(r)
 		if tok == "" {
-			writeErr(w, 401, "未授权")
+			writeErr(w, 401, "Unauthorized")
 			return
 		}
 		if !verifyJWT(tok, s.jwtKey) {
-			writeErr(w, 401, "token 无效或已过期")
+			writeErr(w, 401, "Token invalid or expired")
 			return
 		}
 		h.ServeHTTP(w, r)
@@ -169,14 +169,14 @@ func (s *Server) authInit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if existing != "" {
-		writeErr(w, 403, "密码已设置")
+		writeErr(w, 403, "Password set")
 		return
 	}
 	var req struct {
 		Password string `json:"password"`
 	}
 	if err := decode(r, &req); err != nil || req.Password == "" {
-		writeErr(w, 400, "密码不能为空")
+		writeErr(w, 400, "Password cannot be empty.")
 		return
 	}
 	if msg := validatePassword(req.Password); msg != "" {
@@ -185,7 +185,7 @@ func (s *Server) authInit(w http.ResponseWriter, r *http.Request) {
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
-		writeErr(w, 500, "密码加密失败")
+		writeErr(w, 500, "Password encryption failed")
 		return
 	}
 	// Use INSERT... ON CONFLICT DO NOTHING instead of upsert: GetSetting above is just a quick
@@ -194,16 +194,16 @@ func (s *Server) authInit(w http.ResponseWriter, r *http.Request) {
 	// password first, and the read check itself may fail due to a failure.
 	inserted, err := pg.InsertSettingIfAbsent(authPassKey, string(hash))
 	if err != nil {
-		writeErr(w, 500, "保存失败: "+err.Error())
+		writeErr(w, 500, "save failed: "+err.Error())
 		return
 	}
 	if !inserted {
-		writeErr(w, 403, "密码已设置")
+		writeErr(w, 403, "Password set")
 		return
 	}
 	tok, err := signJWT(s.jwtKey)
 	if err != nil {
-		writeErr(w, 500, "token 生成失败")
+		writeErr(w, 500, "Token Generation Failed")
 		return
 	}
 	writeJSON(w, 200, map[string]any{"token": tok})
@@ -218,7 +218,7 @@ func (s *Server) authChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !verifyJWT(extractToken(r), s.jwtKey) {
-		writeErr(w, 401, "未授权")
+		writeErr(w, 401, "Unauthorized")
 		return
 	}
 	var req struct {
@@ -226,11 +226,11 @@ func (s *Server) authChangePassword(w http.ResponseWriter, r *http.Request) {
 		NewPassword string `json:"new_password"`
 	}
 	if err := decode(r, &req); err != nil {
-		writeErr(w, 400, "请求格式错误")
+		writeErr(w, 400, "Malformation of request")
 		return
 	}
 	if req.NewPassword == "" {
-		writeErr(w, 400, "新密码不能为空")
+		writeErr(w, 400, "The new password cannot be empty.")
 		return
 	}
 	if msg := validatePassword(req.NewPassword); msg != "" {
@@ -243,20 +243,20 @@ func (s *Server) authChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !ok || hash == "" {
-		writeErr(w, 403, "密码未初始化，请先设置密码")
+		writeErr(w, 403, "The password has not been initialized. Please set it first.")
 		return
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(req.OldPassword)); err != nil {
-		writeErr(w, 401, "当前密码错误")
+		writeErr(w, 401, "Current password error")
 		return
 	}
 	newHash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
 	if err != nil {
-		writeErr(w, 500, "密码加密失败")
+		writeErr(w, 500, "Password encryption failed")
 		return
 	}
 	if err := pg.SetSetting(authPassKey, string(newHash)); err != nil {
-		writeErr(w, 500, "保存失败: "+err.Error())
+		writeErr(w, 500, "save failed: "+err.Error())
 		return
 	}
 	writeJSON(w, 200, map[string]any{"ok": true})
@@ -273,11 +273,11 @@ func (s *Server) authLogin(w http.ResponseWriter, r *http.Request) {
 		Password string `json:"password"`
 	}
 	if err := decode(r, &req); err != nil {
-		writeErr(w, 400, "请求格式错误")
+		writeErr(w, 400, "Malformation of request")
 		return
 	}
 	if req.Username != "ARTEX" {
-		writeErr(w, 401, "用户名或密码错误")
+		writeErr(w, 401, "Username or password error")
 		return
 	}
 	hash, ok, err := pg.GetSetting(authPassKey)
@@ -286,16 +286,16 @@ func (s *Server) authLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !ok || hash == "" {
-		writeErr(w, 403, "密码未初始化，请先设置密码")
+		writeErr(w, 403, "The password has not been initialized. Please set it first.")
 		return
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(req.Password)); err != nil {
-		writeErr(w, 401, "用户名或密码错误")
+		writeErr(w, 401, "Username or password error")
 		return
 	}
 	tok, err := signJWT(s.jwtKey)
 	if err != nil {
-		writeErr(w, 500, "token 生成失败")
+		writeErr(w, 500, "Token Generation Failed")
 		return
 	}
 	writeJSON(w, 200, map[string]any{"token": tok})
